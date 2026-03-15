@@ -221,7 +221,8 @@ export default function App() {
 
   if (currentLevelIndex === null) {
     return (
-      <div className="flex flex-col w-full h-screen bg-[#050505] font-mono text-cyan-500 select-none items-center p-8 overflow-y-auto">
+      <>
+        <div className="flex flex-col w-full h-screen bg-[#050505] font-mono text-cyan-500 select-none items-center p-8 overflow-y-auto">
         <div className="max-w-6xl w-full">
           <div className="text-center mb-12 shrink-0">
             <h1 className="text-5xl font-black uppercase tracking-widest text-cyan-400 mb-4 flex items-center justify-center gap-4">
@@ -267,6 +268,92 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {/* Compendium Modal - Menu Level */}
+      {showCompendium && (
+        <div
+          className="absolute inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center pointer-events-auto z-50"
+          onClick={() => setShowCompendium(false)}
+        >
+          <div
+            className="bg-zinc-950 border border-cyan-900/50 max-w-5xl w-full max-h-[90vh] overflow-hidden shadow-[0_0_50px_rgba(0,255,255,0.1)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="h-14 bg-black border-b border-cyan-900/50 flex items-center justify-between px-6">
+              <h2 className="text-xl font-black uppercase tracking-widest text-cyan-400 flex items-center gap-2">
+                <BookOpen size={20} /> Data Compendium
+              </h2>
+              <button
+                onClick={() => setShowCompendium(false)}
+                className="text-cyan-700 hover:text-cyan-400 transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex border-b border-cyan-900/50">
+              <button
+                onClick={() => setCompendiumTab('towers')}
+                className={`flex-1 py-3 text-sm font-bold uppercase tracking-widest transition-colors ${
+                  compendiumTab === 'towers'
+                    ? 'bg-cyan-950/50 text-cyan-400 border-b-2 border-cyan-400'
+                    : 'text-cyan-700 hover:text-cyan-500'
+                }`}
+              >
+                Towers
+              </button>
+              <button
+                onClick={() => setCompendiumTab('enemies')}
+                className={`flex-1 py-3 text-sm font-bold uppercase tracking-widest transition-colors ${
+                  compendiumTab === 'enemies'
+                    ? 'bg-cyan-950/50 text-cyan-400 border-b-2 border-cyan-400'
+                    : 'text-cyan-700 hover:text-cyan-500'
+                }`}
+              >
+                Enemies
+              </button>
+              <button
+                onClick={() => setCompendiumTab('skills')}
+                className={`flex-1 py-3 text-sm font-bold uppercase tracking-widest transition-colors ${
+                  compendiumTab === 'skills'
+                    ? 'bg-cyan-950/50 text-cyan-400 border-b-2 border-cyan-400'
+                    : 'text-cyan-700 hover:text-cyan-500'
+                }`}
+              >
+                Skills
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-14rem)]">
+              {compendiumTab === 'towers' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {TOWER_COMPENDIUM.map((tower) => (
+                    <TowerCard key={tower.id} tower={tower} />
+                  ))}
+                </div>
+              )}
+              {compendiumTab === 'enemies' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {ENEMY_COMPENDIUM.map((enemy) => (
+                    <EnemyCard key={enemy.id} enemy={enemy} />
+                  ))}
+                </div>
+              )}
+              {compendiumTab === 'skills' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {SKILL_COMPENDIUM.map((skill) => (
+                    <SkillCard key={skill.id} skill={skill} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      </>
     );
   }
 
@@ -590,7 +677,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Compendium Modal */}
+      {/* Compendium Modal - Game Level */}
       {showCompendium && (
         <div
           className="absolute inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center pointer-events-auto z-50"
