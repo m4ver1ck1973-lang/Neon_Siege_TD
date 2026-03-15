@@ -20,6 +20,27 @@ export interface TowerConfig {
   levels: TowerLevel[];
 }
 
+export interface SkillConfig {
+  id: string;
+  name: string;
+  cooldown: number;
+  placementType: 'Path' | 'Point' | 'Global';
+  color: string;
+  description: string;
+  damage?: number;
+  maxTriggers?: number;
+  duration?: number;
+  effects?: {
+    radius?: number;
+    shield_strip?: boolean;
+    stun_duration?: number;
+    mechanical_only?: boolean;
+    health?: number;
+    aggro_radius?: number;
+    // Can add more from GDD as needed
+  }
+}
+
 export interface EnemySubtype {
   id: string;
   name: string;
@@ -55,6 +76,18 @@ export interface LevelConfig {
   gridHeight: number;
 }
 
+export type StatusEffectType = 'slow' | 'stun' | 'armor_shred' | 'miss' | 'corrosion' | 'nanite_plague';
+
+export interface StatusEffect {
+  id: string; // unique instance id
+  sourceId: string; // tower level id that applied it
+  type: StatusEffectType;
+  value: number; // e.g. 0.25 for 25% slow
+  duration: number;
+  // Optional for DoT effects
+  lastTick?: number;
+}
+
 export interface GameState {
   health: number;
   maxHealth: number;
@@ -64,4 +97,6 @@ export interface GameState {
   usedPower: number;
   isBrownout: boolean;
   status: 'menu' | 'planning' | 'playing' | 'gameover' | 'victory';
+  skillCooldowns: Record<string, number>;
+  gameSpeed: number;
 }
