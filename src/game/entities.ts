@@ -619,12 +619,13 @@ export class Tower implements Vector2D {
         
         // Emit pulse effect (caller will add to effectParticles)
         if (effectParticles) {
+          const towerLevelIndex = this.levelIndex; // Capture for anonymous class
           effectParticles.push(new (class {
             x: number; y: number; radius: number; maxRadius: number;
-            life: number; maxLife: number; color: string;
-            constructor(x: number, y: number, radius: number, duration: number, color: string) {
+            life: number; maxLife: number; color: string; levelIndex: number;
+            constructor(x: number, y: number, radius: number, duration: number, color: string, levelIndex: number) {
               this.x = x; this.y = y; this.maxRadius = radius; this.maxLife = duration;
-              this.life = duration; this.color = color; this.radius = 0;
+              this.life = duration; this.color = color; this.radius = 0; this.levelIndex = levelIndex;
             }
             update(dt: number): boolean { this.life -= dt; this.radius = this.maxRadius * (1 - this.life / this.maxLife); return this.life > 0; }
             draw(ctx: CanvasRenderingContext2D, cellSize: number) {
@@ -635,7 +636,7 @@ export class Tower implements Vector2D {
               ctx.beginPath(); ctx.arc(this.x * cellSize, this.y * cellSize, this.radius * cellSize, 0, Math.PI * 2); ctx.stroke();
               ctx.shadowBlur = 0; ctx.globalAlpha = 1.0;
             }
-          })(this.x, this.y, this.level.range, 0.8, this.level.color));
+          })(this.x, this.y, this.level.range, 0.8, this.level.color, towerLevelIndex));
         }
       }
       return null; // Debuff towers don't fire projectiles
