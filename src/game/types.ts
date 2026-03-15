@@ -76,7 +76,7 @@ export interface LevelConfig {
   gridHeight: number;
 }
 
-export type StatusEffectType = 'slow' | 'stun' | 'armor_shred' | 'miss' | 'corrosion' | 'nanite_plague';
+export type StatusEffectType = 'slow' | 'stun' | 'armor_shred' | 'vulnerability' | 'corrosion' | 'nanite_plague';
 
 export interface StatusEffect {
   id: string; // unique instance id

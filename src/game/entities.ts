@@ -69,7 +69,7 @@ export class Projectile {
   special: string;
   sourceId: string;
   life: number = 1.0; // Used for lifetime of projectiles and beams
-  
+
   vx: number = 0;
   vy: number = 0;
   pierceCount: number = 0;
@@ -79,8 +79,13 @@ export class Projectile {
   isCloud: boolean = false;
   cloudRadius: number = 0;
   tickTimer: number = 0;
+  isKinetic: boolean = false; // Triangular slug projectiles
+  isChainLightning: boolean = false; // Jagged lightning for Arc Pylon
+  cloudPulse: number = 0; // For pulsing amorphous cloud effect
+  cloudOffsets: number[] = []; // Random offsets for irregular shape
+  lightningSegments: {x: number, y: number}[] = []; // For chain lightning rendering
 
-  constructor(x: number, y: number, target: Enemy | null, damage: number, color: string, isBeam: boolean, special: string, sourceId: string) {
+  constructor(x: number, y: number, target: Enemy | null, damage: number, color: string, isBeam: boolean, special: string, sourceId: string, isKinetic: boolean = false) {
     this.x = x;
     this.y = y;
     this.target = target;
@@ -89,6 +94,7 @@ export class Projectile {
     this.isBeam = isBeam;
     this.special = special;
     this.sourceId = sourceId;
+    this.isKinetic = isKinetic;
     if (isBeam) this.life = 0.1;
 
     // Initialize piercing logic
@@ -206,6 +212,13 @@ export class Enemy implements Vector2D {
   // Calculated properties from effects
   speedMultiplier: number = 1.0;
   damageTakenMultiplier: number = 1.0;
+  damageVulnerabilityMultiplier: number = 1.0; // From vulnerability effects
+  // Visual state
+  hasCorrosion: boolean = false;
+  corrosionPulse: number = 0; // For pulsing glow effect
+  hasNanitePlague: boolean = false; // For nanite particle effects
+  nanitePulse: number = 0; // For animating nanite particles
+  facingAngle: number = 0; // Radians, for directional rendering
   // Shield properties
   shieldDamageReduction: number = 0.9; // Default 90% if not specified
   // Debug tracking
@@ -273,8 +286,11 @@ export class Enemy implements Vector2D {
     // Reset multipliers
     this.speedMultiplier = 1.0;
     this.damageTakenMultiplier = 1.0;
+    this.damageVulnerabilityMultiplier = 1.0;
     this.isStunned = false; // Reset stun state
+    this.hasCorrosion = false; // Reset corrosion visual state
     let maxSlow = 0;
+    let totalArmorShred = 0;
 
     for (let i = this.effects.length - 1; i >= 0; i--) {
       const effect = this.effects[i];
@@ -293,10 +309,34 @@ export class Enemy implements Vector2D {
         const effectiveSlow = Math.max(0, effect.value * (1 - this.slowResistance));
         maxSlow = Math.max(maxSlow, effectiveSlow);
       }
-      if (effect.type === 'armor_shred') this.damageTakenMultiplier += effect.value;
+      if (effect.type === 'armor_shred') {
+        totalArmorShred += effect.value;
+      }
+      if (effect.type === 'vulnerability') {
+        this.damageVulnerabilityMultiplier += effect.value;
+      }
 
-      // Handle Corrosion (DoT)
-      if (effect.type === 'corrosion' || effect.type === 'nanite_plague') {
+      // Track corrosion for visual effects
+      if (effect.type === 'corrosion') {
+        this.hasCorrosion = true;
+        // Update pulse timer for visual effect
+        this.corrosionPulse += dt;
+        if (this.corrosionPulse > 0.4) this.corrosionPulse = 0;
+        // Initialize lastTick if undefined (track time since effect started)
+        if (effect.lastTick === undefined) effect.lastTick = 0;
+
+        effect.lastTick += dt; // Accumulate time
+        if (effect.lastTick >= 0.5) { // Tick every 0.5s
+          this.takeDamage(effect.value * 0.5); // Apply DoT damage (value is per second)
+          effect.lastTick = 0; // Reset timer
+        }
+      }
+
+      // Track nanite plague for visual effects
+      if (effect.type === 'nanite_plague') {
+        this.hasNanitePlague = true;
+        // Update animation timer for nanite particles
+        this.nanitePulse += dt;
         // Initialize lastTick if undefined (track time since effect started)
         if (effect.lastTick === undefined) effect.lastTick = 0;
 
@@ -307,6 +347,10 @@ export class Enemy implements Vector2D {
         }
       }
     }
+
+    // Apply accumulated armor_shred after processing all effects
+    this.damageTakenMultiplier += totalArmorShred;
+
     if (this.isStunned) {
       this.speedMultiplier = 0;
     } else {
@@ -382,6 +426,14 @@ export class Enemy implements Vector2D {
           const target = this.path[this.pathIndex + 1];
           if (target) {
             const newPos = moveTowards(this, target, currentSpeed * dt);
+            
+            // Update facing angle based on movement direction
+            const dx = target.x - this.x;
+            const dy = target.y - this.y;
+            if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
+              this.facingAngle = Math.atan2(dy, dx);
+            }
+            
             this.x = newPos.x;
             this.y = newPos.y;
             if (distance(this, target) < 0.1) {
@@ -390,6 +442,13 @@ export class Enemy implements Vector2D {
           }
         } else {
           // Reached the decoy's closest waypoint - stop and attack
+          // Face the decoy when attacking
+          const dx = this.decoyTarget.x - this.x;
+          const dy = this.decoyTarget.y - this.y;
+          if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
+            this.facingAngle = Math.atan2(dy, dx);
+          }
+          
           // Enemy stays ON THE PATH, attacking from the closest waypoint
           const distToDecoy = distance(this, this.decoyTarget);
           const attackRange = 1.5; // Can attack decoy from path
@@ -410,6 +469,14 @@ export class Enemy implements Vector2D {
 
     const currentSpeed = this.subtype.speed * this.speedMultiplier;
     const newPos = moveTowards(this, target, currentSpeed * dt);
+    
+    // Update facing angle based on movement direction
+    const dx = target.x - this.x;
+    const dy = target.y - this.y;
+    if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
+      this.facingAngle = Math.atan2(dy, dx);
+    }
+    
     this.x = newPos.x;
     this.y = newPos.y;
 
@@ -422,7 +489,7 @@ export class Enemy implements Vector2D {
   }
 
   takeDamage(amount: number, sourceX?: number, sourceY?: number) {
-    let multiplier = (1 - this.damageReduction) * this.damageTakenMultiplier;
+    let multiplier = (1 - this.damageReduction) * this.damageTakenMultiplier * this.damageVulnerabilityMultiplier;
 
     // Shield only applies if we have a valid damage source position
     if (this.shieldActive && sourceX !== undefined && sourceY !== undefined) {
@@ -472,12 +539,18 @@ export class Enemy implements Vector2D {
     // Spawn floating damage number (show actual damage, minimum 1 for display)
     // Scale up damage display for visual clarity
     const displayDamage = Math.max(1, Math.floor(finalDamage * 5));
+    // Color: Red if >80% of base damage, yellow if 40-80%, orange if <40%
+    const damageRatio = finalDamage / amount;
+    let damageColor: string;
+    if (damageRatio >= 0.8) damageColor = '#ef4444'; // Red - near full damage
+    else if (damageRatio >= 0.4) damageColor = '#fbbf24'; // Yellow - moderate mitigation
+    else damageColor = '#f97316'; // Orange - heavily mitigated
     this.damageNumbers.push(new DamageNumber(
-      this.x, 
-      this.y - 0.3, 
-      displayDamage, 
-      finalDamage >= amount * 0.9 ? '#ef4444' : '#f59e0b', // Red if full damage, orange if mitigated
-      finalDamage >= amount * 0.9 // Crit if >90% damage
+      this.x,
+      this.y - 0.3,
+      displayDamage,
+      damageColor,
+      damageRatio >= 0.9 // Crit if >90% damage
     ));
     
     this.health -= finalDamage;
@@ -502,6 +575,8 @@ export class Tower implements Vector2D {
   fireRateMultiplier: number = 1.0;
   specialTimer: number = 0;
   activeTimer: number = 0;
+  pulseTimer: number = 0; // For debuff tower visual pulses
+  facingAngle: number = 0; // Radians, for directional rendering
 
   constructor(x: number, y: number, categoryIndex: number, levelIndex: number = 0) {
     this.x = x;
@@ -509,9 +584,10 @@ export class Tower implements Vector2D {
     this.categoryIndex = categoryIndex;
     this.levelIndex = levelIndex;
     this.level = TOWERS[categoryIndex].levels[levelIndex];
+    this.facingAngle = -Math.PI / 2; // Default facing up (270 degrees)
   }
 
-  update(dt: number, enemies: Enemy[], isBrownout: boolean, effectManager: EffectManager): Projectile | null {
+  update(dt: number, enemies: Enemy[], isBrownout: boolean, effectManager: EffectManager, effectParticles?: any[]): Projectile | null {
     if (this.level.fireRate === 0) return null; // Economic towers don't fire
 
     // Brownout reduces fire rate by 50% (cooldown recovers half as fast)
@@ -520,6 +596,50 @@ export class Tower implements Vector2D {
     if (isBrownout) speedMult *= 0.5;
 
     const effectiveDt = dt * speedMult;
+
+    // Debuff towers emit visual pulses and apply AOE effects
+    const towerType = TOWERS[this.categoryIndex].type;
+    const isDebuff = towerType === 'Debuff';
+
+    if (isDebuff) {
+      // Scale pulse intensity with tower tier (levelIndex 0, 1, 2)
+      const pulseIntensity = 0.4 + (this.levelIndex * 0.2); // 0.4, 0.6, 0.8
+      this.pulseTimer -= dt;
+      if (this.pulseTimer <= 0) {
+        this.pulseTimer = 1.0; // Pulse every 1 second
+        
+        // Apply AOE effect to ALL enemies in range
+        for (const enemy of enemies) {
+          if (enemy.isStealth) continue;
+          const dist = distance(this, enemy);
+          if (dist <= this.level.range) {
+            effectManager.applySpecial(enemy, this.level.special, this.level.id, 0);
+          }
+        }
+        
+        // Emit pulse effect (caller will add to effectParticles)
+        if (effectParticles) {
+          effectParticles.push(new (class {
+            x: number; y: number; radius: number; maxRadius: number;
+            life: number; maxLife: number; color: string;
+            constructor(x: number, y: number, radius: number, duration: number, color: string) {
+              this.x = x; this.y = y; this.maxRadius = radius; this.maxLife = duration;
+              this.life = duration; this.color = color; this.radius = 0;
+            }
+            update(dt: number): boolean { this.life -= dt; this.radius = this.maxRadius * (1 - this.life / this.maxLife); return this.life > 0; }
+            draw(ctx: CanvasRenderingContext2D, cellSize: number) {
+              const alpha = pulseIntensity * (this.life / this.maxLife);
+              ctx.globalAlpha = alpha; ctx.strokeStyle = this.color; ctx.lineWidth = 3;
+              ctx.shadowBlur = 10 + (this.levelIndex * 5); // More blur for higher tiers
+              ctx.shadowColor = this.color;
+              ctx.beginPath(); ctx.arc(this.x * cellSize, this.y * cellSize, this.radius * cellSize, 0, Math.PI * 2); ctx.stroke();
+              ctx.shadowBlur = 0; ctx.globalAlpha = 1.0;
+            }
+          })(this.x, this.y, this.level.range, 0.8, this.level.color));
+        }
+      }
+      return null; // Debuff towers don't fire projectiles
+    }
 
     if (this.cooldown > 0) {
       this.cooldown -= effectiveDt;
@@ -544,19 +664,30 @@ export class Tower implements Vector2D {
 
     if (target) {
       this.cooldown = 1 / this.level.fireRate;
-      const isBeam = this.level.special === 'continuous_beam';
 
-      // For towers with 0 damage (pure debuff), just apply the effect
-      if (this.level.damage === 0) {
-        effectManager.applySpecial(target, this.level.special, this.level.id, 0);
-        return null;
+      // Update facing angle to point at target
+      const dx = target.x - this.x;
+      const dy = target.y - this.y;
+      if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
+        this.facingAngle = Math.atan2(dy, dx);
       }
+
+      const isBeam = this.level.special === 'continuous_beam';
+      const isKinetic = towerType === 'Kinetic';
+      const isChain = this.level.special.startsWith('chain_');
 
       if (isBeam) {
-        target.takeDamage(this.level.damage * effectiveDt * this.level.fireRate, this.x, this.y); // Continuous damage
+        // Continuous beam: deal full damage per shot (fireRate determines shots/second)
+        target.takeDamage(this.level.damage, this.x, this.y);
         effectManager.applySpecial(target, this.level.special, this.level.id, this.level.damage);
       }
-      return new Projectile(this.x, this.y, target, this.level.damage, this.level.color, isBeam, this.level.special, this.level.id);
+      
+      const proj = new Projectile(this.x, this.y, target, this.level.damage, this.level.color, isBeam, this.level.special, this.level.id, isKinetic);
+      if (isChain) {
+        proj.isChainLightning = true;
+        // Will be populated by engine when chain bounces
+      }
+      return proj;
     }
 
     return null;

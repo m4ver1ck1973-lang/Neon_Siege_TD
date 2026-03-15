@@ -9,7 +9,7 @@ export class EffectManager {
 
     switch (type) {
       case 'slow': {
-        // Handles "slow_25" and "slow_45" from "slow_45_miss_15"
+        // Handles "slow_25" and "slow_45" from "slow_45_vuln_15"
         const value = parseInt(parts[1]) / 100;
         target.addEffect({
           id: crypto.randomUUID(),
@@ -19,14 +19,14 @@ export class EffectManager {
           duration: 2.0 // Default duration for slows
         });
 
-        // Handle compound effects like "slow_45_miss_15"
-        if (parts.length > 2 && parts[2] === 'miss') {
-          const missValue = parseInt(parts[3]) / 100;
+        // Handle compound effects like "slow_45_vuln_15"
+        if (parts.length > 2 && parts[2] === 'vuln') {
+          const vulnValue = parseInt(parts[3]) / 100;
           target.addEffect({
             id: crypto.randomUUID(),
-            sourceId: sourceId + '_miss', // unique source
-            type: 'miss',
-            value: missValue,
+            sourceId: sourceId + '_vuln', // unique source
+            type: 'vulnerability',
+            value: vulnValue,
             duration: 2.0
           });
         }

@@ -271,12 +271,12 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col w-full h-screen bg-[#050505] overflow-hidden font-mono text-cyan-500 select-none">
-      
+    <div className="flex flex-row w-full h-screen bg-[#050505] overflow-hidden font-mono text-cyan-500 select-none">
+
       {/* TOP BAR - Cyberpunk Terminal Style */}
-      <div className="h-10 bg-black border-b border-cyan-900/50 flex items-center justify-between px-4 text-xs shadow-[0_0_15px_rgba(0,255,255,0.05)] z-20 shrink-0 uppercase tracking-wider">
+      <div className="absolute top-0 left-0 right-64 h-10 bg-black border-b border-cyan-900/50 flex items-center justify-between px-4 text-xs shadow-[0_0_15px_rgba(0,255,255,0.05)] z-20 shrink-0 uppercase tracking-wider">
         <div className="flex items-center gap-8">
-          <button 
+          <button
             onClick={() => setCurrentLevelIndex(null)}
             className="text-cyan-400 font-bold flex items-center gap-2 hover:text-white transition-colors"
           >
@@ -305,39 +305,21 @@ export default function App() {
             {gameState.usedPower}/{gameState.maxPower}W
           </span>
         </div>
-
-        {/* Game Speed Controls */}
-        <div className="flex items-center gap-2">
-          <span className="text-cyan-700">SPEED:</span>
-          {[1, 2, 3].map((speed) => (
-            <button
-              key={speed}
-              onClick={() => engineRef.current?.setGameSpeed(speed)}
-              className={`px-3 py-1 text-xs font-bold border transition-all ${
-                gameState.gameSpeed === speed
-                  ? 'bg-cyan-900 border-cyan-400 text-cyan-400 shadow-[0_0_10px_cyan]'
-                  : 'bg-zinc-950 border-cyan-900/50 text-cyan-700 hover:border-cyan-500 hover:text-cyan-400'
-              }`}
-            >
-              {speed}x
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Game Canvas Container */}
       <div className="flex-1 relative w-full">
-        <canvas 
-          ref={canvasRef} 
-          className="absolute inset-0 w-full h-full block cursor-crosshair" 
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 w-full h-full block cursor-crosshair"
           onClick={handleCanvasClick}
           onMouseMove={handleCanvasMouseMove}
         />
 
         {/* Planning Phase Overlay */}
         {gameState.status === 'planning' && (
-          <div className="absolute bottom-24 left-1/2 -translate-x-1/2 pointer-events-auto z-30">
-            <button 
+          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 pointer-events-auto z-30">
+            <button
               onClick={() => engineRef.current?.beginWave()}
               className="px-8 py-3 bg-cyan-950/80 border-2 border-cyan-400 text-cyan-400 font-bold uppercase tracking-widest hover:bg-cyan-900 hover:text-white hover:shadow-[0_0_20px_rgba(34,211,238,0.5)] transition-all"
             >
@@ -345,41 +327,6 @@ export default function App() {
             </button>
           </div>
         )}
-
-        {/* Skill Bar */}
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-3 pointer-events-auto z-30 bg-zinc-950/80 p-3 border border-cyan-900/50 rounded-lg backdrop-blur-sm">
-          {ACTIVE_SKILLS.map(skill => {
-            const cooldown = gameState.skillCooldowns[skill.id] || 0;
-            const isSelected = selectedSkillId === skill.id;
-            return (
-              <button
-                key={skill.id}
-                onClick={() => {
-                  if (cooldown <= 0) {
-                    setSelectedSkillId(isSelected ? null : skill.id);
-                    if (isSelected && engineRef.current) engineRef.current.setSkillPreview(null);
-                  }
-                }}
-                className={`w-12 h-12 border bg-black flex items-center justify-center relative group transition-all ${
-                  isSelected ? 'border-cyan-400 shadow-[0_0_10px_cyan]' : 'border-cyan-900/50 hover:border-cyan-500'
-                } ${cooldown > 0 ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-              >
-                <span className="font-bold text-lg" style={{ color: skill.color }}>{skill.name[0]}</span>
-                
-                {cooldown > 0 && (
-                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-xs font-mono text-white">
-                    {Math.ceil(cooldown)}
-                  </div>
-                )}
-                
-                <div className="absolute bottom-full mb-2 hidden group-hover:block bg-black border border-cyan-900 p-2 whitespace-nowrap z-50 rounded shadow-lg">
-                  <div className="text-xs font-bold mb-1" style={{ color: skill.color }}>{skill.name}</div>
-                  <div className="text-[10px] text-cyan-400 max-w-[200px] whitespace-normal">{skill.description}</div>
-                </div>
-              </button>
-            )
-          })}
-        </div>
 
         {/* Radial Menu Overlay */}
         {radialMenu && (
@@ -459,7 +406,7 @@ export default function App() {
         )}
         {/* Selected Tower Panel */}
         {selectedPlacedTower && (
-          <div className="absolute bottom-6 right-6 bg-zinc-950/90 border border-cyan-900/50 p-4 w-64 shadow-[0_0_20px_rgba(0,255,255,0.1)] z-30">
+          <div className="absolute bottom-6 left-6 bg-zinc-950/90 border border-cyan-900/50 p-4 w-64 shadow-[0_0_20px_rgba(0,255,255,0.1)] z-30">
             <div className="flex justify-between items-start mb-2">
               <h3 className="font-bold uppercase tracking-wider text-sm" style={{ color: selectedPlacedTower.level.color }}>{selectedPlacedTower.level.name}</h3>
               <button 
@@ -541,6 +488,106 @@ export default function App() {
           </div>
         )}
 
+      </div>
+
+      {/* RIGHT SIDEBAR - Skills & Controls */}
+      <div className="w-64 bg-black border-l border-cyan-900/50 flex flex-col z-20 shrink-0">
+        {/* Game Speed Controls */}
+        <div className="p-4 border-b border-cyan-900/50">
+          <div className="text-cyan-700 text-xs font-bold uppercase tracking-widest mb-3">Sim Speed</div>
+          <div className="flex gap-2">
+            {[1, 2, 3].map((speed) => (
+              <button
+                key={speed}
+                onClick={() => engineRef.current?.setGameSpeed(speed)}
+                className={`flex-1 py-2 text-xs font-bold border transition-all ${
+                  gameState.gameSpeed === speed
+                    ? 'bg-cyan-900 border-cyan-400 text-cyan-400 shadow-[0_0_10px_cyan]'
+                    : 'bg-zinc-950 border-cyan-900/50 text-cyan-700 hover:border-cyan-500 hover:text-cyan-400'
+                }`}
+              >
+                {speed}x
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Active Skills */}
+        <div className="p-4 border-b border-cyan-900/50 flex-grow">
+          <div className="text-cyan-700 text-xs font-bold uppercase tracking-widest mb-3">Active Skills</div>
+          <div className="flex flex-col gap-3">
+            {ACTIVE_SKILLS.map(skill => {
+              const cooldown = gameState.skillCooldowns[skill.id] || 0;
+              const isSelected = selectedSkillId === skill.id;
+              return (
+                <button
+                  key={skill.id}
+                  onClick={() => {
+                    if (cooldown <= 0) {
+                      setSelectedSkillId(isSelected ? null : skill.id);
+                      if (isSelected && engineRef.current) engineRef.current.setSkillPreview(null);
+                    }
+                  }}
+                  className={`w-full h-14 border bg-black flex items-center gap-3 px-3 relative group transition-all ${
+                    isSelected ? 'border-cyan-400 shadow-[0_0_10px_cyan]' : 'border-cyan-900/50 hover:border-cyan-500'
+                  } ${cooldown > 0 ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                >
+                  <div className="w-10 h-10 rounded border flex items-center justify-center font-bold text-lg shrink-0" 
+                    style={{ backgroundColor: skill.color + '20', borderColor: skill.color, color: skill.color }}>
+                    {skill.name[0]}
+                  </div>
+                  <div className="flex-grow text-left">
+                    <div className="text-xs font-bold text-white">{skill.name}</div>
+                    <div className="text-[9px] text-cyan-700">{skill.cooldown}s CD</div>
+                  </div>
+
+                  {cooldown > 0 && (
+                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-sm font-mono text-white font-bold">
+                      {Math.ceil(cooldown)}s
+                    </div>
+                  )}
+
+                  {/* Tooltip on hover - positioned to left so it doesn't block canvas */}
+                  <div className="absolute left-full top-0 ml-2 hidden group-hover:block bg-black border border-cyan-900 p-2 w-48 z-50 rounded shadow-lg">
+                    <div className="text-xs font-bold mb-1" style={{ color: skill.color }}>{skill.name}</div>
+                    <div className="text-[10px] text-cyan-400">{skill.description}</div>
+                    <div className="text-[9px] text-cyan-700 mt-1 uppercase">{skill.placementType} Placement</div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Pause Button */}
+        <div className="p-4 border-t border-cyan-900/50">
+          <button
+            onClick={() => engineRef.current?.setGameSpeed(gameState.gameSpeed === 0 ? 1 : 0)}
+            className={`w-full py-3 border font-bold uppercase tracking-widest text-xs transition-all ${
+              gameState.gameSpeed === 0
+                ? 'bg-amber-900/50 border-amber-500 text-amber-400'
+                : 'bg-zinc-950 border-cyan-900/50 text-cyan-700 hover:border-cyan-500 hover:text-cyan-400'
+            }`}
+          >
+            {gameState.gameSpeed === 0 ? '▶ Resume' : '⏸ Pause'}
+          </button>
+        </div>
+
+        {/* Dev Tools */}
+        <div className="p-4 border-t border-cyan-900/50">
+          <div className="text-rose-700 text-[10px] font-bold uppercase tracking-widest mb-2">Dev Tools</div>
+          <button
+            onClick={() => {
+              if (engineRef.current) {
+                engineRef.current.state.credits += 500;
+                engineRef.current.notifyState();
+              }
+            }}
+            className="w-full py-2 bg-rose-950/50 border border-rose-700 text-rose-400 font-bold uppercase tracking-widest text-xs hover:bg-rose-900 hover:border-rose-500 transition-all flex items-center justify-center gap-2"
+          >
+            <Coins size={12} /> +500 Credits
+          </button>
+        </div>
       </div>
 
       {/* Compendium Modal */}

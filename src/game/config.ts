@@ -13,8 +13,8 @@ export const TOWERS: TowerConfig[] = [
     type: "Debuff",
     levels: [
       { id: "dbf_1", name: "Signal Jammer", cost: 200, powerDraw: 8, damage: 0, range: 3.0, fireRate: 1.0, special: "slow_25", color: "#94a3b8" },
-      { id: "dbf_2", name: "Neural Spam Rig", cost: 500, powerDraw: 15, damage: 2, range: 3.5, fireRate: 1.0, special: "slow_45_miss_15", color: "#38bdf8" },
-      { id: "dbf_3", name: "System Crasher", cost: 1500, powerDraw: 40, damage: 5, range: 4.5, fireRate: 0.8, special: "stun_1s_proc", color: "#a855f7" }
+      { id: "dbf_2", name: "Neural Spam Rig", cost: 500, powerDraw: 15, damage: 0, range: 3.5, fireRate: 1.0, special: "slow_45_vuln_15", color: "#38bdf8" },
+      { id: "dbf_3", name: "System Crasher", cost: 1500, powerDraw: 40, damage: 0, range: 4.5, fireRate: 0.8, special: "stun_1s_proc", color: "#a855f7" }
     ]
   },
   {
@@ -60,7 +60,7 @@ export const ACTIVE_SKILLS: SkillConfig[] = [
     cooldown: 45.0,
     placementType: "Path",
     color: "#a855f7", // purple-500
-    description: "Projects a high-priority target. Enemies stop to attack it.",
+    description: "Projects a holographic zone. Enemies that enter are frozen in place.",
     duration: 8.0,
     effects: {
       health: 500,

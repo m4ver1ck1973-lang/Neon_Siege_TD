@@ -106,7 +106,7 @@ function getTowerDescription(id: string, type: string): string {
     kin_3: "Long-range railgun. Rounds pierce through multiple enemies.",
     // Debuff
     dbf_1: "Slows enemies within range by 25%.",
-    dbf_2: "Slows enemies by 45% and grants 15% chance to miss attacks.",
+    dbf_2: "Slows enemies by 45% and makes them take 15% increased damage.",
     dbf_3: "Severely slows enemies with a chance to fully stun them.",
     // Energy
     nrg_1: "Short-range beam tower. Continuous high damage output.",

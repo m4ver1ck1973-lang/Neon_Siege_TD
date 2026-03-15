@@ -5,6 +5,31 @@ import { EffectManager } from './EffectManager';
 import { distance } from './math';
 import { audioManager } from './audioManager';
 
+// Helper function to generate jagged lightning segments
+function generateLightningSegments(x1: number, y1: number, x2: number, y2: number, segmentCount: number, jaggedness: number): {x: number, y: number}[] {
+  const segments: {x: number, y: number}[] = [];
+  const dx = (x2 - x1) / segmentCount;
+  const dy = (y2 - y1) / segmentCount;
+  
+  segments.push({x: x1, y: y1});
+  
+  for (let i = 1; i < segmentCount; i++) {
+    const baseX = x1 + dx * i;
+    const baseY = y1 + dy * i;
+    // Add perpendicular offset for jagged effect
+    const perpX = -dy / Math.sqrt(dx * dx + dy * dy);
+    const perpY = dx / Math.sqrt(dx * dx + dy * dy);
+    const offset = (Math.random() - 0.5) * 2 * jaggedness;
+    segments.push({
+      x: baseX + perpX * offset,
+      y: baseY + perpY * offset
+    });
+  }
+  
+  segments.push({x: x2, y: y2});
+  return segments;
+}
+
 export class GameEngine {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
@@ -395,8 +420,18 @@ export class GameEngine {
 
     // Towers
     for (const tower of this.towers) {
-      const proj = tower.update(dt, this.enemies, this.state.isBrownout, this.effectManager);
+      const proj = tower.update(dt, this.enemies, this.state.isBrownout, this.effectManager, this.effectParticles);
       if (proj) {
+        // Generate lightning segments for chain lightning projectiles
+        if (proj.isChainLightning && proj.target && proj.target.health > 0) {
+          proj.lightningSegments = generateLightningSegments(
+            proj.x, proj.y,
+            proj.target.x, proj.target.y,
+            8, // segment count
+            0.3 // jaggedness
+          );
+        }
+        
         this.projectiles.push(proj);
         // Play tower fire sound based on tower type
         const towerType = TOWERS[tower.categoryIndex].type;
@@ -438,16 +473,24 @@ export class GameEngine {
               hitTarget.x,
               hitTarget.y,
               bestTarget,
-              p.damage, 
-              p.color, 
-              p.isBeam, 
-              `chain_${nextChainCount}`, 
+              p.damage,
+              p.color,
+              p.isBeam,
+              `chain_${nextChainCount}`,
               p.sourceId
             );
             // Pass on the hit history so we don't bounce back to previous targets
             chainProj.hitIds = new Set(p.hitIds);
             chainProj.hitIds.add(hitTarget.id);
-            
+            chainProj.isChainLightning = true;
+            // Generate jagged lightning segments
+            chainProj.lightningSegments = generateLightningSegments(
+              hitTarget.x, hitTarget.y,
+              bestTarget.x, bestTarget.y,
+              8, // segment count
+              0.3 // jaggedness
+            );
+
             this.projectiles.push(chainProj);
           }
         }
@@ -455,24 +498,29 @@ export class GameEngine {
         // AoE Cloud Logic (Bio-Hazzard Vent)
         if (p.special === 'aoe_cloud') {
           const cloud = new Projectile(
-            hitTarget.x, hitTarget.y, null, 
+            hitTarget.x, hitTarget.y, null,
             p.damage, // Damage per tick
-            p.color, 
-            false, 
-            "cloud_effect", 
+            p.color,
+            false,
+            "cloud_effect",
             p.sourceId
           );
           cloud.isCloud = true;
           cloud.life = 4.0; // Duration 4s
           cloud.cloudRadius = 1.5; // Radius 1.5 tiles
+          // Generate random offsets for irregular amorphous shape (8 points around circle)
+          for (let i = 0; i < 8; i++) {
+            cloud.cloudOffsets.push(0.2 + Math.random() * 0.3); // 0.2 to 0.5 variation
+          }
           this.projectiles.push(cloud);
         }
 
         // Spawn explosion particles for non-beam projectiles
         if (!p.isBeam) {
-          // Spawn explosion particles
+          // Spawn particles - green for acid/corrosion effects
+          const particleColor = p.special === 'corrosion_debuff' ? '#22c55e' : p.color;
           for(let j=0; j<5; j++) {
-            this.particles.push(new Particle(p.x, p.y, p.color));
+            this.particles.push(new Particle(p.x, p.y, particleColor));
           }
         }
       }
@@ -491,7 +539,9 @@ export class GameEngine {
         for (const e of this.enemies) {
           if (trap.hitEnemyIds.has(e.id)) continue;
 
-          if (distance(trap, e) < 0.5) {
+          // Hit detection accounts for enemy radius (Lifter-Bot radius = 0.45)
+          const hitRadius = 0.5 + e.subtype.radius;
+          if (distance(trap, e) < hitRadius) {
             e.takeDamage(trap.damage, trap.x, trap.y);
             trap.hitEnemyIds.add(e.id);
             trap.triggersRemaining--;
@@ -499,7 +549,7 @@ export class GameEngine {
 
             // Visual feedback
             this.particles.push(new Particle(e.x, e.y, trap.color));
-            
+
             if (trap.triggersRemaining <= 0) break;
           }
         }
@@ -580,103 +630,134 @@ export class GameEngine {
     }
   }
 
-  drawTowerShape(ctx: CanvasRenderingContext2D, px: number, py: number, size: number, type: string, color: string) {
-    // Base dark shape
+  drawTowerShape(ctx: CanvasRenderingContext2D, px: number, py: number, size: number, type: string, color: string, facingAngle: number = 0) {
+    ctx.save();
+
+    // Rotate tower to face target
+    if (facingAngle !== 0) {
+      ctx.translate(px, py);
+      ctx.rotate(facingAngle);
+      ctx.translate(-px, -py);
+    }
+
+    // Consistent sizing: all shapes fit within ~0.38 * size radius
+    // Center circle is 0.12 * size radius for all towers
+    const outerScale = 0.38;
+    const innerScale = 0.28;
+    const coreRadius = 0.12;
+    // Square needs to be scaled by 1/√2 so its corners match the diamond's vertices
+    const squareScale = 1 / Math.SQRT2;
+
+    // Base dark shape (filled)
     ctx.fillStyle = '#18181b';
     ctx.beginPath();
     switch (type) {
-      case 'Kinetic':
-        ctx.moveTo(px, py - size * 0.35);
-        ctx.lineTo(px + size * 0.35, py + size * 0.25);
-        ctx.lineTo(px - size * 0.35, py + size * 0.25);
+      case 'Kinetic': // Equilateral Triangle (pointing up)
+        ctx.moveTo(px, py - size * outerScale);
+        ctx.lineTo(px + size * outerScale * 0.866, py + size * outerScale * 0.5);
+        ctx.lineTo(px - size * outerScale * 0.866, py + size * outerScale * 0.5);
         break;
-      case 'Energy':
+      case 'Energy': // Hexagon (flat top/bottom)
         for (let i = 0; i < 6; i++) {
-          const angle = (Math.PI / 3) * i - Math.PI / 6;
-          const x = px + Math.cos(angle) * size * 0.4;
-          const y = py + Math.sin(angle) * size * 0.4;
+          const angle = (Math.PI / 3) * i;
+          const x = px + Math.cos(angle) * size * outerScale;
+          const y = py + Math.sin(angle) * size * outerScale;
           if (i === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         }
         break;
-      case 'Debuff':
-        ctx.rect(px - size * 0.4, py - size * 0.4, size * 0.8, size * 0.8);
+      case 'Debuff': // Square (scaled to match diamond's corner-to-corner size)
+        ctx.rect(px - size * outerScale * squareScale, py - size * outerScale * squareScale, size * outerScale * squareScale * 2, size * outerScale * squareScale * 2);
         break;
-      case 'Chemical':
-        // Circle with droplet pattern
-        ctx.arc(px, py, size * 0.35, 0, Math.PI * 2);
+      case 'Chemical': // Circle
+        ctx.arc(px, py, size * outerScale, 0, Math.PI * 2);
         break;
-      case 'Economic':
-        ctx.moveTo(px, py - size * 0.45);
-        ctx.lineTo(px + size * 0.45, py);
-        ctx.lineTo(px, py + size * 0.45);
-        ctx.lineTo(px - size * 0.45, py);
+      case 'Economic': // Solar Array - Star shape (5-pointed)
+        for (let i = 0; i < 10; i++) {
+          const angle = (Math.PI * 2 * i) / 10 - Math.PI / 2;
+          const radius = (i % 2 === 0) ? size * outerScale : size * outerScale * 0.5;
+          const x = px + Math.cos(angle) * radius;
+          const y = py + Math.sin(angle) * radius;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
         break;
       default:
-        ctx.rect(px - size * 0.4, py - size * 0.4, size * 0.8, size * 0.8);
+        ctx.rect(px - size * outerScale * squareScale, py - size * outerScale * squareScale, size * outerScale * squareScale * 2, size * outerScale * squareScale * 2);
     }
     ctx.closePath();
     ctx.fill();
 
-    // Colored outline shape
+    // Colored outline shape (stroke)
     ctx.shadowBlur = 10;
     ctx.shadowColor = color;
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
     switch (type) {
-      case 'Kinetic':
-        ctx.moveTo(px, py - size * 0.3);
-        ctx.lineTo(px + size * 0.3, py + size * 0.2);
-        ctx.lineTo(px - size * 0.3, py + size * 0.2);
+      case 'Kinetic': // Equilateral Triangle
+        ctx.moveTo(px, py - size * innerScale);
+        ctx.lineTo(px + size * innerScale * 0.866, py + size * innerScale * 0.5);
+        ctx.lineTo(px - size * innerScale * 0.866, py + size * innerScale * 0.5);
         break;
-      case 'Energy':
+      case 'Energy': // Hexagon
         for (let i = 0; i < 6; i++) {
-          const angle = (Math.PI / 3) * i - Math.PI / 6;
-          const x = px + Math.cos(angle) * size * 0.3;
-          const y = py + Math.sin(angle) * size * 0.3;
+          const angle = (Math.PI / 3) * i;
+          const x = px + Math.cos(angle) * size * innerScale;
+          const y = py + Math.sin(angle) * size * innerScale;
           if (i === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         }
         break;
-      case 'Debuff':
-        ctx.rect(px - size * 0.3, py - size * 0.3, size * 0.6, size * 0.6);
+      case 'Debuff': // Square (scaled to match diamond)
+        ctx.rect(px - size * innerScale * squareScale, py - size * innerScale * squareScale, size * innerScale * squareScale * 2, size * innerScale * squareScale * 2);
         break;
-      case 'Chemical':
-        // Circle outline
-        ctx.arc(px, py, size * 0.3, 0, Math.PI * 2);
-        // Center dot
-        ctx.moveTo(px + size * 0.12, py);
-        ctx.arc(px, py, size * 0.12, 0, Math.PI * 2);
+      case 'Chemical': // Circle
+        ctx.arc(px, py, size * innerScale, 0, Math.PI * 2);
         break;
-      case 'Economic':
-        ctx.moveTo(px, py - size * 0.35);
-        ctx.lineTo(px + size * 0.35, py);
-        ctx.lineTo(px, py + size * 0.35);
-        ctx.lineTo(px - size * 0.35, py);
+      case 'Economic': // Solar Array - Star shape (5-pointed)
+        for (let i = 0; i < 10; i++) {
+          const angle = (Math.PI * 2 * i) / 10 - Math.PI / 2;
+          const radius = (i % 2 === 0) ? size * innerScale : size * innerScale * 0.5;
+          const x = px + Math.cos(angle) * radius;
+          const y = py + Math.sin(angle) * radius;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
         break;
       default:
-        ctx.rect(px - size * 0.3, py - size * 0.3, size * 0.6, size * 0.6);
+        ctx.rect(px - size * innerScale * squareScale, py - size * innerScale * squareScale, size * innerScale * squareScale * 2, size * innerScale * squareScale * 2);
     }
     ctx.closePath();
     ctx.stroke();
 
-    // Inner core
+    // Inner core (consistent size for all towers)
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(px, py, size * 0.15, 0, Math.PI * 2);
+    ctx.arc(px, py, size * coreRadius, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
+
+    ctx.restore();
   }
 
-  drawEnemyShape(ctx: CanvasRenderingContext2D, px: number, py: number, r: number, typeId: string, color: string, isGlitching: boolean, progress: number) {
+  drawEnemyShape(ctx: CanvasRenderingContext2D, px: number, py: number, r: number, typeId: string, color: string, isGlitching: boolean, progress: number, facingAngle: number = 0) {
     const glitchX = isGlitching ? px + (Math.random() - 0.5) * 15 * (1 - progress) : px;
     const glitchY = isGlitching ? py + (Math.random() - 0.5) * 15 * (1 - progress) : py;
 
-    ctx.beginPath();
+    ctx.save();
     
+    // Rotate for directional enemies (Courier arrow)
+    if (typeId === 'scr_1' && facingAngle !== 0) {
+      ctx.translate(px, py);
+      ctx.rotate(facingAngle);
+      ctx.translate(-px, -py);
+    }
+
+    ctx.beginPath();
+
     if (typeId === 'scr_1') {
-      // Courier: Fast Arrow
+      // Courier: Fast Arrow (points right by default, rotated by facingAngle)
       ctx.moveTo(glitchX + r, glitchY);
       ctx.lineTo(glitchX - r, glitchY - r * 0.8);
       ctx.lineTo(glitchX - r * 0.5, glitchY);
@@ -703,14 +784,14 @@ export class GameEngine {
       ctx.lineTo(glitchX, glitchY + r);
       ctx.lineTo(glitchX - r, glitchY);
     }
-    
+
     ctx.closePath();
 
     if (isGlitching) {
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
       ctx.stroke();
-      
+
       // Scanlines
       if (Math.random() > 0.5) {
         ctx.fillStyle = '#ffffff';
@@ -721,7 +802,7 @@ export class GameEngine {
       ctx.shadowColor = color;
       ctx.fillStyle = color;
       ctx.fill();
-      
+
       // Inner detail
       ctx.fillStyle = '#18181b'; // Dark core
       ctx.shadowBlur = 0;
@@ -750,6 +831,8 @@ export class GameEngine {
       ctx.closePath();
       ctx.fill();
     }
+    
+    ctx.restore();
   }
 
   draw() {
@@ -832,7 +915,7 @@ export class GameEngine {
       const px = t.x * cellSize;
       const py = t.y * cellSize;
       const type = TOWERS[t.categoryIndex].type;
-      this.drawTowerShape(ctx, px, py, cellSize, type, t.level.color);
+      this.drawTowerShape(ctx, px, py, cellSize, type, t.level.color, t.facingAngle);
     }
 
     if (this.selectedPlacedTower) {
@@ -942,16 +1025,16 @@ export class GameEngine {
       const px = e.x * cellSize;
       const py = e.y * cellSize;
       const r = e.subtype.radius * cellSize;
-      
+
       ctx.save();
-      
+
       if (e.rezTimer > 0) {
         const progress = 1 - (e.rezTimer / e.maxRezTimer);
         ctx.globalAlpha = progress;
-        this.drawEnemyShape(ctx, px, py, r, e.subtype.id, e.subtype.color, true, progress);
+        this.drawEnemyShape(ctx, px, py, r, e.subtype.id, e.subtype.color, true, progress, e.facingAngle);
       } else {
         if (e.isStealth) ctx.globalAlpha = 0.25;
-        this.drawEnemyShape(ctx, px, py, r, e.subtype.id, e.subtype.color, false, 0);
+        this.drawEnemyShape(ctx, px, py, r, e.subtype.id, e.subtype.color, false, 0, e.facingAngle);
 
         // Health bar
         const hpPercent = e.health / e.maxHealth;
@@ -980,6 +1063,46 @@ export class GameEngine {
           }
         }
       }
+
+      // Corrosion visual effect (pulsing green glow)
+      if (e.hasCorrosion) {
+        // Pulse: 0 to 1 over 0.4s, using sine wave for smooth pulse
+        const pulse = (Math.sin(e.corrosionPulse * Math.PI * 5) + 1) / 2; // 0.4s period
+        const alpha = 0.2 + pulse * 0.2; // Pulse between 0.2 and 0.4
+
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = '#22c55e'; // green-500
+        ctx.strokeStyle = '#22c55e';
+        ctx.lineWidth = 3;
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.arc(px, py, r * 1.2, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
+        ctx.shadowBlur = 0;
+      }
+
+      // Nanite plague visual effect (floating purple particles)
+      if (e.hasNanitePlague) {
+        const naniteCount = 8;
+        const particleSize = 2;
+        
+        for (let i = 0; i < naniteCount; i++) {
+          const angle = (Math.PI * 2 * i) / naniteCount + (e.nanitePulse * 2);
+          const orbitRadius = r * (0.8 + Math.sin(e.nanitePulse * 3 + i) * 0.3);
+          const nx = px + Math.cos(angle) * orbitRadius;
+          const ny = py + Math.sin(angle) * orbitRadius;
+          
+          ctx.fillStyle = '#a855f7'; // purple-500
+          ctx.shadowBlur = 6;
+          ctx.shadowColor = '#a855f7';
+          ctx.beginPath();
+          ctx.arc(nx, ny, particleSize, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+      }
+
       ctx.restore();
 
       // Draw damage numbers
@@ -1004,13 +1127,38 @@ export class GameEngine {
     // Draw Projectiles
     for (const p of this.projectiles) {
       if (p.isCloud) {
-        ctx.globalAlpha = 0.3;
-        ctx.fillStyle = p.color;
+        // Update pulse timer for amorphous breathing effect
+        p.cloudPulse += 0.016; // Approx 60fps
+        const pulse = Math.sin(p.cloudPulse * 2) * 0.1 + 1; // Pulse between 0.9 and 1.1
+        
+        ctx.globalAlpha = 0.15;
+        ctx.fillStyle = '#22c55e'; // green-500 for acid cloud
+        
+        // Draw irregular amorphous blob shape
+        const cx = p.x * cellSize;
+        const cy = p.y * cellSize;
+        const baseRadius = p.cloudRadius * cellSize * pulse;
+        
         ctx.beginPath();
-        ctx.arc(p.x * cellSize, p.y * cellSize, p.cloudRadius * cellSize, 0, Math.PI * 2);
+        for (let i = 0; i <= 16; i++) {
+          const angle = (Math.PI * 2 * i) / 16;
+          // Interpolate between offsets for smoother shape
+          const offsetIdx = (i / 2) % 8;
+          const t = offsetIdx % 1;
+          const idx1 = Math.floor(offsetIdx);
+          const idx2 = (idx1 + 1) % 8;
+          const offset = p.cloudOffsets[idx1] * (1 - t) + p.cloudOffsets[idx2] * t;
+          
+          const r = baseRadius * offset;
+          const x = cx + Math.cos(angle) * r;
+          const y = cy + Math.sin(angle) * r;
+          
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
         ctx.fill();
         ctx.globalAlpha = 1.0;
-        // Optional: Draw cloud wisps/particles here for flavor
         continue;
       }
 
@@ -1024,7 +1172,70 @@ export class GameEngine {
         ctx.lineTo(p.target.x * cellSize, p.target.y * cellSize);
         ctx.stroke();
         ctx.shadowBlur = 0;
+      } else if (p.isChainLightning && p.lightningSegments.length > 0) {
+        // Chain lightning - jagged bolt with branches
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = p.color;
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        
+        // Draw main lightning bolt
+        ctx.beginPath();
+        const segments = p.lightningSegments;
+        ctx.moveTo(segments[0].x * cellSize, segments[0].y * cellSize);
+        for (let i = 1; i < segments.length; i++) {
+          ctx.lineTo(segments[i].x * cellSize, segments[i].y * cellSize);
+        }
+        ctx.stroke();
+        
+        // Draw bright white core
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(segments[0].x * cellSize, segments[0].y * cellSize);
+        for (let i = 1; i < segments.length; i++) {
+          ctx.lineTo(segments[i].x * cellSize, segments[i].y * cellSize);
+        }
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
+        ctx.shadowBlur = 0;
+      } else if (p.isKinetic) {
+        // Triangular slug projectiles
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = p.color;
+        ctx.fillStyle = p.color;
+        
+        const px = p.x * cellSize;
+        const py = p.y * cellSize;
+        const size = cellSize * 0.12;
+        
+        // Calculate direction angle
+        let angle = 0;
+        if (p.target && p.target.health > 0) {
+          const dx = p.target.x - p.x;
+          const dy = p.target.y - p.y;
+          angle = Math.atan2(dy, dx);
+        } else if (p.vx !== 0 || p.vy !== 0) {
+          angle = Math.atan2(p.vy, p.vx);
+        }
+        
+        // Draw triangle pointing in direction of travel
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(size, 0); // Tip
+        ctx.lineTo(-size * 0.7, -size * 0.5); // Bottom left
+        ctx.lineTo(-size * 0.7, size * 0.5); // Bottom right
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+        ctx.shadowBlur = 0;
       } else {
+        // Default circular projectiles
         ctx.shadowBlur = 8;
         ctx.shadowColor = p.color;
         ctx.fillStyle = p.color;
@@ -1078,6 +1289,50 @@ export class GameEngine {
   }
 }
 
+class TowerPulseEffect {
+  x: number;
+  y: number;
+  radius: number = 0;
+  maxRadius: number;
+  life: number;
+  maxLife: number;
+  color: string;
+
+  constructor(x: number, y: number, maxRadius: number, duration: number, color: string) {
+    this.x = x;
+    this.y = y;
+    this.maxRadius = maxRadius;
+    this.maxLife = duration;
+    this.life = duration;
+    this.color = color;
+  }
+
+  update(dt: number): boolean {
+    this.life -= dt;
+    const progress = 1 - (this.life / this.maxLife);
+    this.radius = this.maxRadius * progress;
+    return this.life > 0;
+  }
+
+  draw(ctx: CanvasRenderingContext2D, cellSize: number) {
+    const progress = 1 - (this.life / this.maxLife);
+    const alpha = 0.6 * (this.life / this.maxLife); // Fade out
+
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = 3;
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = this.color;
+
+    ctx.beginPath();
+    ctx.arc(this.x * cellSize, this.y * cellSize, this.radius * cellSize, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1.0;
+  }
+}
+
 class EmpBlastEffect {
   x: number;
   y: number;
@@ -1107,13 +1362,13 @@ class EmpBlastEffect {
   draw(ctx: CanvasRenderingContext2D, cellSize: number) {
     const progress = 1 - (this.life / this.maxLife);
     const alpha = 1 - progress; // Fade out
-    
+
     ctx.globalAlpha = alpha * 0.8;
     ctx.strokeStyle = this.color;
     ctx.lineWidth = 4;
     ctx.shadowBlur = 15;
     ctx.shadowColor = this.color;
-    
+
     ctx.beginPath();
     ctx.arc(this.x * cellSize, this.y * cellSize, this.radius * cellSize, 0, Math.PI * 2);
     ctx.stroke();
