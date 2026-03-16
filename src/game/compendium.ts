@@ -132,16 +132,16 @@ function getEnemyDescription(id: string, logicTag: string): string {
     hvy_1: "Heavy construction bot. High health, slow movement.",
     hvy_2: "Armored bulldozer. Shielded from frontal attacks.",
     hvy_3: "Demolition unit. Moves in unpredictable bursts.",
-    bio_1: "Infected vermin. Spawns in large swarms.",
-    bio_2: "Mutated leaper. Can jump over sections of the path.",
+    bio_1: "Infected vermin. 40% chance to spawn 1-2 minions on death.",
+    bio_2: "Mutated leaper. Jumps 5 cells ahead every 8 seconds.",
     bio_3: "Toxic brute. Leaves corrosive puddles on death.",
-    glitch_1: "Digital wisp. High evasion, hard to hit.",
-    glitch_2: "Phase-shifting entity. Teleports when critically damaged.",
-    glitch_3: "Healing anomaly. Regenerates nearby enemies.",
+    glitch_1: "Digital wisp. 30% chance to evade projectile attacks.",
+    glitch_2: "Phase-shifting entity. Teleports forward when HP drops below 50%.",
+    glitch_3: "Healing anomaly. Regenerates nearby enemies for 5 HP/s.",
     boss_1: "Executive enforcement mech. Disables towers with missile strikes.",
-    boss_2: "Collective drone consciousness. Splits when damaged.",
+    boss_2: "Collective drone consciousness. Splits into a clone at 50% HP.",
     boss_3: "Rogue AI construct. Moves off the designated path.",
-    boss_4: "Final corporate weapon. Hijacks your towers to fight back.",
+    boss_4: "Final corporate weapon. Hijacks nearby towers every 3 seconds.",
   };
   return descriptions[id] || `Hostile entity. Threat level: ${logicTag}.`;
 }

@@ -213,6 +213,22 @@ export class Enemy implements Vector2D {
   hasShield: boolean = false;
   shieldActive: boolean = false;
 
+  // New enemy logic tag properties
+  evasionChance: number = 0; // evasion_30 - 30% dodge chance
+  teleportThreshold: number = 0; // teleport_50_hp - teleport at 50% HP
+  hasTeleported: boolean = false; // Track if teleport already used
+  healingAuraRadius: number = 0; // healing_aura - radius for healing nearby enemies
+  healingAmount: number = 0; // healing_aura - HP healed per tick
+  healingTimer: number = 0; // healing_aura - timer for healing ticks
+  swarmSpawnCount: number = 0; // swarm_spawn_10 - spawn 10 minions on death
+  pathJumpDistance: number = 0; // path_jump - jump ahead along path
+  pathJumpTimer: number = 0; // path_jump - timer between jumps
+  hasSplit: boolean = false; // split_on_damage - has already split
+  splitHealthPercent: number = 0; // split_on_damage - HP % to split at
+  towerHijackRadius: number = 0; // tower_hijack - radius for hijacking towers
+  hijackTimer: number = 0; // tower_hijack - timer between hijack attempts
+  hijackedTowers: Set<string> = new Set(); // Track hijacked tower IDs
+
   decoyTarget: Decoy | null = null;
   attackCooldown: number = 0;
   effects: StatusEffect[] = [];
@@ -234,6 +250,7 @@ export class Enemy implements Vector2D {
   damageMitigatedTotal: number = 0;
   hitCount: number = 0;
   damageNumbers: DamageNumber[] = [];
+  isMinion: boolean = false; // True if spawned from another enemy (visual distinction)
 
   constructor(path: Vector2D[], subtype: EnemySubtype, waveMultiplier: number) {
     this.path = path;
@@ -275,6 +292,42 @@ export class Enemy implements Vector2D {
     if (this.subtype.logic_tag.startsWith('ignore_slow_')) {
       const parts = this.subtype.logic_tag.split('_');
       this.slowResistance = parseInt(parts[2]) / 100;
+    }
+
+    // New enemy logic tags
+    if (this.subtype.logic_tag.startsWith('evasion_')) {
+      const parts = this.subtype.logic_tag.split('_');
+      this.evasionChance = parseInt(parts[1]) / 100;
+    }
+
+    if (this.subtype.logic_tag.startsWith('teleport_')) {
+      const parts = this.subtype.logic_tag.split('_');
+      this.teleportThreshold = parseInt(parts[1]) / 100; // e.g., 50_hp -> 0.5
+    }
+
+    if (this.subtype.logic_tag === 'healing_aura') {
+      this.healingAuraRadius = 3.0; // 3 cell radius
+      this.healingAmount = 5; // 5 HP per tick
+      this.healingTimer = 0;
+    }
+
+    if (this.subtype.logic_tag.startsWith('swarm_spawn_chance_')) {
+      // 50% chance to spawn 1-3 minions on death
+      this.swarmSpawnCount = 0; // Not used for chance-based spawning
+    }
+
+    if (this.subtype.logic_tag === 'path_jump') {
+      this.pathJumpDistance = 5; // Jump 5 cells ahead
+      this.pathJumpTimer = 0;
+    }
+
+    if (this.subtype.logic_tag === 'split_on_damage') {
+      this.splitHealthPercent = 0.5; // Split at 50% HP
+    }
+
+    if (this.subtype.logic_tag === 'tower_hijack') {
+      this.towerHijackRadius = 5.0; // 5 cell radius
+      this.hijackTimer = 0;
     }
   }
 
@@ -505,7 +558,39 @@ export class Enemy implements Vector2D {
     return true; // Still alive and moving
   }
 
-  takeDamage(amount: number, sourceX?: number, sourceY?: number) {
+  takeDamage(amount: number, sourceX?: number, sourceY?: number): { damaged: boolean, splitSpawn?: Enemy[] } {
+    // Evasion: Chance to completely dodge the attack
+    if (this.evasionChance > 0 && Math.random() < this.evasionChance) {
+      return { damaged: false, splitSpawn: [] }; // Dodged!
+    }
+
+    // Teleport: Teleport forward when HP drops below threshold (only once)
+    if (this.teleportThreshold > 0 && !this.hasTeleported) {
+      const hpPercent = this.health / this.maxHealth;
+      if (hpPercent <= this.teleportThreshold && amount > 0) {
+        this.hasTeleported = true;
+        // Teleport forward by jumping pathIndex ahead
+        const jumpAhead = Math.min(10, this.path.length - 1 - this.pathIndex);
+        if (jumpAhead > 0) {
+          this.pathIndex += jumpAhead;
+          // Snap to new waypoint position
+          const newWaypoint = this.path[this.pathIndex];
+          this.x = newWaypoint.x;
+          this.y = newWaypoint.y;
+        }
+      }
+    }
+
+    // Split on damage: Spawn a clone when damaged below threshold (only once)
+    if (this.splitHealthPercent > 0 && !this.hasSplit && amount > 0) {
+      const hpPercent = this.health / this.maxHealth;
+      if (hpPercent <= this.splitHealthPercent) {
+        this.hasSplit = true;
+        // Return signal to spawn a split clone
+        return { damaged: true, splitSpawn: [this] }; // Signal to engine to create a clone
+      }
+    }
+
     let multiplier = (1 - this.damageReduction) * this.damageTakenMultiplier * this.damageVulnerabilityMultiplier;
 
     // Shield only applies if we have a valid damage source position
@@ -578,6 +663,8 @@ export class Enemy implements Vector2D {
       this.stealthTimer = 2.0; // Smoke lasts 2 seconds
       this.smokeCooldown = 5.0; // Cooldown before it can trigger again
     }
+
+    return { damaged: true, splitSpawn: [] };
   }
 }
 

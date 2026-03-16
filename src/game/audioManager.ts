@@ -6,6 +6,13 @@ export interface SoundConfig {
   category: SoundCategory;
 }
 
+export interface PlaySoundOptions {
+  pitchVariation?: number; // Range for random pitch variation (e.g., 0.1 = ±10%)
+  pan?: number; // -1.0 (left) to 1.0 (right), overrides position-based panning
+  position?: { x: number; y: number }; // Game position for auto-panning
+  modulatedPan?: { frequency: number; amplitude: number }; // Sine wave modulation (Hz, -1 to 1 range)
+}
+
 export class AudioManager {
   private audioContext: AudioContext | null = null;
   private buffers: Map<string, AudioBuffer> = new Map();
@@ -13,6 +20,13 @@ export class AudioManager {
   private musicSource: AudioBufferSourceNode | null = null;
   private currentMusicIndex = 0;
   private musicPlaylist: string[] = ['music_bgm_2', 'music_bgm_1'];
+
+  // Brownout low-pass filter
+  private brownoutFilter: BiquadFilterNode | null = null;
+  private isBrownout = false;
+
+  // Tracking modulated pan sources for cleanup
+  private modulatedPanSources: Map<AudioBufferSourceNode, { startTime: number; frequency: number; amplitude: number }> = new Map();
 
   // Volume levels per category (0.0 to 1.0)
   private volumes: Record<SoundCategory, number> = {
@@ -36,12 +50,18 @@ export class AudioManager {
     try {
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
 
+      // Create brownout low-pass filter (master filter for all audio)
+      this.brownoutFilter = this.audioContext.createBiquadFilter();
+      this.brownoutFilter.type = 'lowpass';
+      this.brownoutFilter.frequency.value = 20000; // Full frequency when not in brownout
+      this.brownoutFilter.connect(this.audioContext.destination);
+
       // Create gain nodes for each category
       const categories: SoundCategory[] = ['music', 'sfx', 'ui', 'ambient', 'voice'];
       for (const category of categories) {
         const gainNode = this.audioContext.createGain();
         gainNode.gain.value = this.volumes[category];
-        gainNode.connect(this.audioContext.destination);
+        gainNode.connect(this.brownoutFilter); // Connect to brownout filter instead of destination
         this.gainNodes.set(category, gainNode);
       }
 
@@ -164,13 +184,13 @@ export class AudioManager {
     return await this.audioContext!.decodeAudioData(arrayBuffer);
   }
 
-  play(soundName: string, overrideVolume?: number): void {
+  play(soundName: string, options?: PlaySoundOptions): void {
     // Auto-initialize if not already done
     if (!this.isInitialized) {
       this.initialize().catch(console.warn);
       return; // Sound will play on next call after initialization
     }
-    
+
     if (this.isMuted) return;
 
     const buffer = this.buffers.get(soundName);
@@ -184,6 +204,40 @@ export class AudioManager {
     const source = this.audioContext.createBufferSource();
     source.buffer = buffer;
 
+    // Apply pitch variation if requested
+    if (options?.pitchVariation) {
+      const variation = (Math.random() * 2 - 1) * options.pitchVariation; // -variation to +variation
+      source.playbackRate.value = 1 + variation;
+    }
+
+    // Create panning node
+    const panNode = this.audioContext.createStereoPanner();
+    
+    // Determine pan value
+    let panValue = 0;
+    
+    if (options?.modulatedPan) {
+      // Modulated panning - sine wave
+      const { frequency, amplitude } = options.modulatedPan;
+      this.modulatedPanSources.set(source, {
+        startTime: this.audioContext.currentTime,
+        frequency,
+        amplitude
+      });
+      panValue = 0; // Will be modulated over time
+    } else if (options?.pan !== undefined) {
+      // Static pan override
+      panValue = Math.max(-1, Math.min(1, options.pan));
+    } else if (options?.position) {
+      // Position-based panning (game coordinates to stereo pan)
+      // Assuming game grid is roughly 0-20 width, center around middle
+      const gameWidth = 20;
+      const normalizedPos = options.position.x / gameWidth; // 0 to 1
+      panValue = (normalizedPos - 0.5) * 2; // -1 to 1
+    }
+    
+    panNode.pan.value = panValue;
+
     // Determine category and get appropriate gain node
     let category: SoundCategory = 'sfx';
     if (soundName.startsWith('music')) category = 'music';
@@ -193,17 +247,43 @@ export class AudioManager {
 
     const gainNode = this.gainNodes.get(category);
     if (gainNode) {
-      source.connect(gainNode);
+      // Connect: source -> pan -> gain -> brownout filter -> destination
+      source.connect(panNode);
+      panNode.connect(gainNode);
     }
 
-    if (overrideVolume !== undefined) {
-      const categoryGain = this.gainNodes.get(category);
-      if (categoryGain) {
-        categoryGain.gain.value = overrideVolume;
-      }
+    // Handle modulated panning over time
+    if (options?.modulatedPan && this.audioContext) {
+      const { frequency, amplitude } = options.modulatedPan;
+      const startTime = this.audioContext.currentTime;
+      
+      // Create LFO for modulation
+      const lfo = this.audioContext.createOscillator();
+      const lfoGain = this.audioContext.createGain();
+      
+      lfo.type = 'sine';
+      lfo.frequency.value = frequency;
+      lfoGain.gain.value = amplitude;
+      
+      lfo.connect(lfoGain);
+      lfoGain.connect(panNode.pan);
+      lfo.start(startTime);
+      
+      // Stop LFO when source ends
+      source.onended = () => {
+        lfo.stop();
+        this.modulatedPanSources.delete(source);
+      };
     }
 
     source.start(0);
+    
+    // Auto-cleanup for modulated pan sources
+    if (!options?.modulatedPan) {
+      source.onended = () => {
+        // Regular cleanup
+      };
+    }
   }
 
   playMusic(): void {
@@ -354,6 +434,28 @@ export class AudioManager {
     if (this.audioContext && this.audioContext.state === 'suspended') {
       this.audioContext.resume();
     }
+  }
+
+  /**
+   * Set brownout state - applies low-pass filter to all audio
+   */
+  setBrownout(enabled: boolean): void {
+    this.isBrownout = enabled;
+    if (this.brownoutFilter && this.audioContext) {
+      // Smooth transition to avoid clicking
+      this.brownoutFilter.frequency.setTargetAtTime(
+        enabled ? 800 : 20000, // 800Hz when brownout, 20kHz normal
+        this.audioContext.currentTime,
+        0.5 // 0.5s transition
+      );
+    }
+  }
+
+  /**
+   * Get current brownout state
+   */
+  isBrownoutActive(): boolean {
+    return this.isBrownout;
   }
 }
 

@@ -103,7 +103,7 @@ export const ENEMIES: EnemyFaction[] = [
   {
     category: "Bio-Hacked",
     subtypes: [
-      { id: "bio_1", name: "Cyber-Rat", health: 15, speed: 5.0, bounty: 5, logic_tag: "swarm_spawn_10", color: "#84cc16", radius: 0.2 }, // lime-500
+      { id: "bio_1", name: "Cyber-Rat", health: 15, speed: 5.0, bounty: 5, logic_tag: "swarm_spawn_chance_50", color: "#84cc16", radius: 0.2 }, // lime-500
       { id: "bio_2", name: "Leaper", health: 80, speed: 3.5, bounty: 30, logic_tag: "path_jump", color: "#4d7c0f", radius: 0.3 }, // lime-700
       { id: "bio_3", name: "Chem-Hulk", health: 350, speed: 1.5, bounty: 60, logic_tag: "death_puddle_slow", color: "#365314", radius: 0.5 } // lime-900
     ]
@@ -128,12 +128,13 @@ export const ENEMIES: EnemyFaction[] = [
 ];
 
 const MAPS = [
+  // Original 4 maps for levels 1-8 (2 difficulties each)
   {
     name: "The Outskirts",
     desc: "A simple path. Good for testing new defense algorithms.",
     gridWidth: 20, gridHeight: 10,
     path: [
-      { x: 0, y: 2 }, { x: 11, y: 2 }, { x: 11, y: 5 }, 
+      { x: 0, y: 2 }, { x: 11, y: 2 }, { x: 11, y: 5 },
       { x: 4, y: 5 }, { x: 4, y: 7 }, { x: 16, y: 7 }
     ]
   },
@@ -142,7 +143,7 @@ const MAPS = [
     desc: "A winding path with multiple switchbacks. Prepare for heavy resistance.",
     gridWidth: 20, gridHeight: 12,
     path: [
-      { x: 2, y: 0 }, { x: 2, y: 8 }, { x: 8, y: 8 }, 
+      { x: 2, y: 0 }, { x: 2, y: 8 }, { x: 8, y: 8 },
       { x: 8, y: 2 }, { x: 14, y: 2 }, { x: 14, y: 10 }, { x: 18, y: 10 }
     ]
   },
@@ -151,8 +152,8 @@ const MAPS = [
     desc: "A long spiral path leading directly to the mainframe.",
     gridWidth: 24, gridHeight: 14,
     path: [
-      { x: 0, y: 1 }, { x: 22, y: 1 }, { x: 22, y: 12 }, 
-      { x: 2, y: 12 }, { x: 2, y: 4 }, { x: 18, y: 4 }, 
+      { x: 0, y: 1 }, { x: 22, y: 1 }, { x: 22, y: 12 },
+      { x: 2, y: 12 }, { x: 2, y: 4 }, { x: 18, y: 4 },
       { x: 18, y: 9 }, { x: 6, y: 9 }, { x: 6, y: 6 }, { x: 14, y: 6 }
     ]
   },
@@ -161,10 +162,88 @@ const MAPS = [
     desc: "A zigzagging gauntlet designed to test your ultimate defenses.",
     gridWidth: 22, gridHeight: 12,
     path: [
-      { x: 1, y: 1 }, { x: 1, y: 10 }, { x: 5, y: 10 }, 
-      { x: 5, y: 1 }, { x: 9, y: 1 }, { x: 9, y: 10 }, 
-      { x: 13, y: 10 }, { x: 13, y: 1 }, { x: 17, y: 1 }, 
+      { x: 1, y: 1 }, { x: 1, y: 10 }, { x: 5, y: 10 },
+      { x: 5, y: 1 }, { x: 9, y: 1 }, { x: 9, y: 10 },
+      { x: 13, y: 10 }, { x: 13, y: 1 }, { x: 17, y: 1 },
       { x: 17, y: 10 }, { x: 20, y: 10 }
+    ]
+  },
+  // 6 new maps for levels 9-20 (2 difficulties each)
+  {
+    name: "Neon Circuit",
+    desc: "A twisting circuit board of death. Enemies navigate tight corners.",
+    gridWidth: 19, gridHeight: 15,
+    path: [
+      { x: 0, y: 11 }, { x: 2, y: 11 }, { x: 2, y: 2 },
+      { x: 8, y: 2 }, { x: 8, y: 5 }, { x: 4, y: 5 },
+      { x: 4, y: 12 }, { x: 10, y: 12 }, { x: 10, y: 9 },
+      { x: 7, y: 9 }, { x: 7, y: 7 }, { x: 11, y: 7 },
+      { x: 11, y: 2 }, { x: 17, y: 2 }, { x: 17, y: 7 },
+      { x: 14, y: 7 }, { x: 14, y: 10 }, { x: 18, y: 10 }
+    ]
+  },
+  {
+    name: "Data Labyrinth",
+    desc: "A confusing maze of pathways. Strategic tower placement is key.",
+    gridWidth: 18, gridHeight: 13,
+    path: [
+      { x: 2, y: 1 }, { x: 2, y: 6 }, { x: 7, y: 6 },
+      { x: 7, y: 8 }, { x: 2, y: 8 }, { x: 2, y: 10 },
+      { x: 15, y: 10 }, { x: 15, y: 8 }, { x: 10, y: 8 },
+      { x: 10, y: 4 }, { x: 5, y: 4 }, { x: 5, y: 2 },
+      { x: 13, y: 2 }, { x: 13, y: 6 }, { x: 15, y: 6 },
+      { x: 15, y: 1 }
+    ]
+  },
+  {
+    name: "Grid Runner",
+    desc: "Fast-paced map with multiple direction changes.",
+    gridWidth: 16, gridHeight: 10,
+    path: [
+      { x: 0, y: 4 }, { x: 1, y: 4 }, { x: 1, y: 1 },
+      { x: 5, y: 1 }, { x: 5, y: 7 }, { x: 6, y: 7 },
+      { x: 6, y: 8 }, { x: 9, y: 8 }, { x: 9, y: 5 },
+      { x: 7, y: 5 }, { x: 7, y: 1 }, { x: 11, y: 1 },
+      { x: 11, y: 9 }, { x: 13, y: 9 }, { x: 13, y: 4 },
+      { x: 15, y: 4 }
+    ]
+  },
+  {
+    name: "Cyber Spiral",
+    desc: "A spiraling descent into digital chaos.",
+    gridWidth: 20, gridHeight: 10,
+    path: [
+      { x: 0, y: 8 }, { x: 2, y: 8 }, { x: 2, y: 5 },
+      { x: 4, y: 5 }, { x: 4, y: 3 }, { x: 2, y: 3 },
+      { x: 2, y: 1 }, { x: 12, y: 1 }, { x: 12, y: 4 },
+      { x: 8, y: 4 }, { x: 8, y: 8 }, { x: 15, y: 8 },
+      { x: 15, y: 1 }, { x: 17, y: 1 }, { x: 17, y: 7 },
+      { x: 19, y: 7 }
+    ]
+  },
+  {
+    name: "Memory Fragment",
+    desc: "Fragmented pathways through corrupted memory sectors.",
+    gridWidth: 16, gridHeight: 11,
+    path: [
+      { x: 0, y: 2 }, { x: 3, y: 2 }, { x: 3, y: 4 },
+      { x: 2, y: 4 }, { x: 2, y: 8 }, { x: 13, y: 8 },
+      { x: 13, y: 2 }, { x: 8, y: 2 }, { x: 8, y: 4 },
+      { x: 11, y: 4 }, { x: 11, y: 6 }, { x: 6, y: 6 },
+      { x: 6, y: 2 }, { x: 6, y: 1 }
+    ]
+  },
+  {
+    name: "The Gauntlet",
+    desc: "The ultimate test. Long winding path with many turns.",
+    gridWidth: 20, gridHeight: 15,
+    path: [
+      { x: 0, y: 13 }, { x: 0, y: 10 }, { x: 2, y: 10 },
+      { x: 2, y: 2 }, { x: 5, y: 2 }, { x: 5, y: 12 },
+      { x: 9, y: 12 }, { x: 9, y: 3 }, { x: 12, y: 3 },
+      { x: 12, y: 2 }, { x: 17, y: 2 }, { x: 17, y: 6 },
+      { x: 12, y: 6 }, { x: 12, y: 12 }, { x: 17, y: 12 },
+      { x: 17, y: 8 }, { x: 19, y: 8 }
     ]
   }
 ];
@@ -177,8 +256,8 @@ const BASE_WAVES = [
   { count: 1, interval: 5.0, enemyId: "scr_3" },  // Wave 5: Mini-Boss (Specialist)
   { count: 8, interval: 3.0, enemyId: "hvy_1" },  // Wave 6: Tank intro
   { count: 12, interval: 2.5, enemyId: "hvy_1" }, // Wave 7
-  { count: 5, interval: 3.0, enemyId: "hvy_2" },  // Wave 8: Bulldozer
-  { count: 30, interval: 0.5, enemyId: "bio_1" }, // Wave 9: Swarm
+  { count: 5, interval: 2.5, enemyId: "hvy_2" },  // Wave 8: Bulldozer
+  { count: 6, interval: 1.5, enemyId: "bio_1" }, // Wave 9: Swarm (nerfed: was 30@0.5s, then 10@1.5s)
   { count: 1, interval: 10.0, enemyId: "boss_1" }, // Wave 10: BOSS 1 (CEO)
   { count: 15, interval: 1.0, enemyId: "bio_1" }, // Wave 11: Bio swarms
   { count: 10, interval: 1.5, enemyId: "bio_1" }, // Wave 12 (Mixed in future logic)
@@ -206,13 +285,20 @@ const FINAL_WAVE_ENEMIES = [
 let levelIdCounter = 1;
 for (let mapIndex = 0; mapIndex < MAPS.length; mapIndex++) {
   const map = MAPS[mapIndex];
-  for (let difficulty = 1; difficulty <= 5; difficulty++) {
+  // 2 difficulties per map: Level 1-2 for maps 1-4, Level 1-2 for maps 5-10
+  // This creates exactly 20 levels total (10 maps × 2 difficulties)
+  for (let difficulty = 1; difficulty <= 2; difficulty++) {
     const waves: WaveConfig[] = [];
-    const numWaves = 4 + difficulty * 2; // 6, 8, 10, 12, 14 waves
+    // Map to appropriate wave progression based on level number
+    // Levels 1-8: waves 1-16, Levels 9-20: waves 9-20
+    const waveOffset = mapIndex * 2; // Each map covers 2 levels worth of waves
+    const numWaves = 6 + difficulty * 2; // 8 waves for diff 1, 10 waves for diff 2
 
     for (let w = 0; w < numWaves; w++) {
-      let baseWave = BASE_WAVES[w % BASE_WAVES.length];
-      
+      let waveIndex = waveOffset + w;
+      // Wrap around if we exceed BASE_WAVES length
+      let baseWave = BASE_WAVES[waveIndex % BASE_WAVES.length];
+
       // Final wave should always be a boss/elite appropriate to level length
       const isFinalWave = (w === numWaves - 1);
       if (isFinalWave) {
@@ -226,20 +312,20 @@ for (let mapIndex = 0; mapIndex < MAPS.length; mapIndex++) {
         // Single elite/boss with longer spawn interval
         baseWave = { count: 1, interval: 8.0, enemyId: bossEnemyId };
       }
-      
+
       waves.push({
         wave: w + 1,
-        count: Math.floor(baseWave.count * (1 + difficulty * 0.2 + w * 0.1)),
-        interval: Math.max(0.3, baseWave.interval * Math.pow(0.9, difficulty)),
+        count: Math.floor(baseWave.count * (1 + difficulty * 0.3 + w * 0.1)),
+        interval: Math.max(0.3, baseWave.interval * Math.pow(0.92, difficulty)),
         enemyId: baseWave.enemyId
       });
     }
 
     LEVELS.push({
       id: `level_${levelIdCounter}`,
-      name: `Map ${mapIndex + 1}: ${map.name} - Level ${difficulty}`,
-      description: `Difficulty ${difficulty}/5. ${map.desc}`,
-      startingCredits: 800 - (difficulty * 50),
+      name: `${map.name} ${difficulty === 1 ? 'I' : 'II'}`,
+      description: `${map.desc} Difficulty: ${difficulty}/2.`,
+      startingCredits: 900 - (difficulty * 100),
       startingHealth: 100,
       gridWidth: map.gridWidth,
       gridHeight: map.gridHeight,

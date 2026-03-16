@@ -131,7 +131,7 @@ export class GameEngine {
       this.notifyState();
       return;
     }
-    
+
     this.state.status = 'planning';
     this.state.wave++;
     this.notifyState();
@@ -161,13 +161,18 @@ export class GameEngine {
     
     this.state.maxPower = max;
     this.state.usedPower = used;
-    
+
     // Play voice line when brownout starts (power exceeded)
-    if (used > max && !this.state.isBrownout) {
+    const newBrownoutState = used > max;
+    if (newBrownoutState && !this.state.isBrownout) {
       audioManager.playVoiceLine('grid_full');
     }
+
+    this.state.isBrownout = newBrownoutState;
     
-    this.state.isBrownout = used > max;
+    // Update audio brownout filter
+    audioManager.setBrownout(newBrownoutState);
+    
     this.notifyState();
   }
 
@@ -183,12 +188,17 @@ export class GameEngine {
         this.state.credits -= level.cost;
         this.towers.push(new Tower(x + 0.5, y + 0.5, categoryIndex, 0));
         this.updatePower();
-        
-        // Play build voice line (10% chance to avoid spam)
+
+        // Play build sound with modulated panning (50% left to 50% right, 1 second cycle)
+        audioManager.play('processing', {
+          modulatedPan: { frequency: 1, amplitude: 0.5 }
+        });
+
+        // Play build voice line occasionally (10% chance to avoid spam)
         if (Math.random() < 0.1) {
           audioManager.playVoiceLine('build');
         }
-        
+
         return true;
       }
     }
@@ -429,14 +439,21 @@ export class GameEngine {
   }
 
   spawnEnemy() {
+    // Hard cap on total enemies to prevent performance meltdown
+    const MAX_ENEMIES = 150;
+    if (this.enemies.length >= MAX_ENEMIES) {
+      console.warn(`[Engine] Max enemies (${MAX_ENEMIES}) reached, skipping spawn`);
+      return;
+    }
+
     const waveConfig = this.level.waves[this.state.wave - 1];
     let subtype = ENEMIES[0].subtypes[0]; // fallback
-    
+
     for (const faction of ENEMIES) {
       const found = faction.subtypes.find(s => s.id === waveConfig.enemyId);
       if (found) subtype = found;
     }
-    
+
     const waveMultiplier = 1 + (this.state.wave * 0.1);
     const centeredPath = this.level.path.map(p => ({ x: p.x + 0.5, y: p.y + 0.5 }));
     this.enemies.push(new Enemy(centeredPath, subtype, waveMultiplier));
@@ -464,8 +481,9 @@ export class GameEngine {
           this.spawnTimer = this.level.waves[this.state.wave - 1].interval;
         }
       } else if (this.enemies.length === 0) {
-        // Wave complete - play voice line (30% chance)
-        if (Math.random() < 0.3) {
+        // Wave complete - check if level is complete
+        if (this.state.wave >= this.level.waves.length) {
+          // Level complete - play victory voice line (100% chance)
           audioManager.playVoiceLine('win_wave');
         }
         this.startWave();
@@ -548,12 +566,19 @@ export class GameEngine {
         }
         
         this.projectiles.push(proj);
-        // Play tower fire sound based on tower type
+        // Play tower fire sound based on tower type with pitch variation and position-based panning
         const towerType = TOWERS[tower.categoryIndex].type;
-        if (towerType === 'Kinetic') audioManager.play('tower_canon');
-        else if (towerType === 'Energy') audioManager.play('tower_laser');
-        else if (towerType === 'Debuff') audioManager.play('tower_zap');
-        else if (towerType === 'Chemical') audioManager.play('sfx_zap_small');
+        const towerPos = { x: tower.x, y: tower.y };
+        
+        if (towerType === 'Kinetic') {
+          audioManager.play('tower_canon', { pitchVariation: 0.1, position: towerPos });
+        } else if (towerType === 'Energy') {
+          audioManager.play('tower_laser', { pitchVariation: 0.1, position: towerPos });
+        } else if (towerType === 'Debuff') {
+          audioManager.play('tower_zap', { pitchVariation: 0.1, position: towerPos });
+        } else if (towerType === 'Chemical') {
+          audioManager.play('sfx_zap_small', { pitchVariation: 0.1, position: towerPos });
+        }
       }
     }
 
@@ -563,11 +588,25 @@ export class GameEngine {
       const hitTarget = p.update(dt, this.enemies, this.effectManager);
 
       if (hitTarget) {
-        hitTarget.takeDamage(p.damage, p.x, p.y);
-        this.effectManager.applySpecial(hitTarget, p.special, p.sourceId, p.damage);
+        const damageResult = hitTarget.takeDamage(p.damage, p.x, p.y);
+
+        if (damageResult.damaged) {
+          this.effectManager.applySpecial(hitTarget, p.special, p.sourceId, p.damage);
+          
+          // Split on Damage Logic - spawn a clone
+          if (damageResult.splitSpawn && damageResult.splitSpawn.length > 0) {
+            // Create a split clone with partial HP
+            const clone = new Enemy(hitTarget.path, hitTarget.subtype, 0.5); // 50% of wave multiplier
+            clone.x = hitTarget.x + (Math.random() - 0.5) * 0.5;
+            clone.y = hitTarget.y + (Math.random() - 0.5) * 0.5;
+            clone.pathIndex = hitTarget.pathIndex;
+            clone.hasSplit = true; // Don't split again
+            this.enemies.push(clone);
+          }
+        }
 
         // Ball Lightning: Create at impact point, travels backward along path
-        if (p.special === 'ball_lightning') {
+        if (p.special === 'ball_lightning' && damageResult.damaged) {
           const towerConfig = TOWERS.find(t => t.levels.some(l => l.id === p.sourceId));
           const towerLevel = towerConfig?.levels.find(l => l.id === p.sourceId);
           const wellDuration = towerLevel?.wellDuration || 5.0;
@@ -721,17 +760,19 @@ export class GameEngine {
           // Hit detection accounts for enemy radius
           const hitRadius = 0.5 + e.subtype.radius;
           if (distance(trap, e) < hitRadius) {
-            e.takeDamage(trap.damage, trap.x, trap.y);
+            const damageResult = e.takeDamage(trap.damage, trap.x, trap.y);
             trap.hitEnemyIds.add(e.id);
             trap.triggersRemaining--;
             trapTriggered = true;
 
-            // Visual feedback - colored particle
-            this.particles.push(new Particle(e.x, e.y, trap.color, 'circle'));
-            
-            // Add white sparks at trap location
-            for (let j = 0; j < 8; j++) {
-              this.particles.push(new Particle(trap.x, trap.y, '#ffffff', 'spark'));
+            // Visual feedback - colored particle (only if damaged)
+            if (damageResult.damaged) {
+              this.particles.push(new Particle(e.x, e.y, trap.color, 'circle'));
+
+              // Add white sparks at trap location
+              for (let j = 0; j < 8; j++) {
+                this.particles.push(new Particle(trap.x, trap.y, '#ffffff', 'spark'));
+              }
             }
 
             if (trap.triggersRemaining <= 0) break;
@@ -762,10 +803,10 @@ export class GameEngine {
         if (distToBall < damageRadius && !enemy.isStealth) {
           // Deal damage (ticks every ~0.5s)
           if (Math.random() < 0.5) {
-            enemy.takeDamage(ball.damage * dt * 2, ball.x, ball.y);
-            
-            // Chance to stun
-            if (Math.random() < ball.stunChance) {
+            const damageResult = enemy.takeDamage(ball.damage * dt * 2, ball.x, ball.y);
+
+            // Chance to stun (only if damaged)
+            if (damageResult.damaged && Math.random() < ball.stunChance) {
               this.effectManager.applySpecial(enemy, 'stun_1s_proc', 'ball_lightning', 0);
             }
           }
@@ -801,7 +842,7 @@ export class GameEngine {
       for (const enemy of this.enemies) {
         const enemyGridX = Math.floor(enemy.x);
         const enemyGridY = Math.floor(enemy.y);
-        
+
         for (const cell of zone.cells) {
           if (!cell) continue;
           if (enemyGridX === cell.x && enemyGridY === cell.y && !enemy.isStealth) {
@@ -817,11 +858,89 @@ export class GameEngine {
       const e = this.enemies[i];
       const alive = e.update(dt);
 
+      // Healing Aura Logic - heal nearby enemies
+      if (e.healingAuraRadius > 0 && e.health > 0) {
+        e.healingTimer -= dt;
+        if (e.healingTimer <= 0) {
+          e.healingTimer = 1.0; // Heal every 1 second
+          for (const other of this.enemies) {
+            if (other.id === e.id || other.health <= 0) continue;
+            if (distance(e, other) <= e.healingAuraRadius) {
+              other.health = Math.min(other.maxHealth, other.health + e.healingAmount);
+            }
+          }
+        }
+      }
+
+      // Path Jump Logic - jump ahead periodically
+      if (e.pathJumpDistance > 0 && e.health > 0) {
+        e.pathJumpTimer -= dt;
+        if (e.pathJumpTimer <= 0) {
+          e.pathJumpTimer = 8.0; // Jump every 8 seconds
+          const jumpAhead = Math.min(e.pathJumpDistance, e.path.length - 1 - e.pathIndex);
+          if (jumpAhead > 0) {
+            e.pathIndex += jumpAhead;
+            const newWaypoint = e.path[e.pathIndex];
+            e.x = newWaypoint.x;
+            e.y = newWaypoint.y;
+          }
+        }
+      }
+
+      // Tower Hijack Logic - disable/hijack nearby towers
+      if (e.towerHijackRadius > 0 && e.health > 0) {
+        e.hijackTimer -= dt;
+        if (e.hijackTimer <= 0) {
+          e.hijackTimer = 3.0; // Attempt hijack every 3 seconds
+          for (const tower of this.towers) {
+            const towerId = `${Math.floor(tower.x)},${Math.floor(tower.y)}`;
+            if (e.hijackedTowers.has(towerId)) continue;
+            if (distance(e, tower) <= e.towerHijackRadius) {
+              // Hijack the tower - disable it temporarily
+              e.hijackedTowers.add(towerId);
+              tower.fireRateMultiplier = 0; // Disable tower
+              tower.specialTimer = 5.0; // For 5 seconds
+            }
+          }
+        }
+      }
+
+      // Reactivate hijacked towers after duration
+      for (const tower of this.towers) {
+        if (tower.fireRateMultiplier === 0 && tower.specialTimer > 0) {
+          tower.specialTimer -= dt;
+          if (tower.specialTimer <= 0) {
+            tower.fireRateMultiplier = 1.0;
+          }
+        }
+      }
+
       if (e.health <= 0) {
-        // Nanite Plague Spread Logic
+        // Swarm Spawn on Death Logic - 40% chance to spawn 1-2 minions
+        if (e.subtype.logic_tag.startsWith('swarm_spawn_chance_')) {
+          if (Math.random() < 0.4 && this.enemies.length < 100) {
+            // Spawn 1-2 minions (reduced from 1-3)
+            const minionCount = Math.floor(Math.random() * 2) + 1; // 1 or 2
+            const maxSpawns = Math.min(minionCount, Math.floor(100 - this.enemies.length));
+            
+            for (let s = 0; s < maxSpawns; s++) {
+              const minionSubtype = e.subtype;
+              const minion = new Enemy(e.path, minionSubtype, 0.15); // 15% HP of normal
+              // Spawn minions directly at parent's position (no offset to avoid off-path spawning)
+              minion.x = e.x;
+              minion.y = e.y;
+              // Start slightly behind parent on path so they don't all stack
+              minion.pathIndex = e.pathIndex;
+              minion.isMinion = true; // Mark as spawned minion for visual distinction
+              this.enemies.push(minion);
+            }
+          }
+        }
+
+        // Nanite Plague Spread Logic - only spread if we don't have too many enemies
         const plagueEffect = e.effects.find(eff => eff.type === 'nanite_plague');
-        if (plagueEffect) {
-          const spreadRadius = 2.0; // Spread radius in grid units
+        if (plagueEffect && this.enemies.length < 100) {
+          const spreadRadius = 2.0; // Original radius
           for (const otherEnemy of this.enemies) {
             if (otherEnemy.id === e.id || otherEnemy.health <= 0) continue;
             if (distance(e, otherEnemy) <= spreadRadius) {
@@ -831,7 +950,7 @@ export class GameEngine {
                 sourceId: plagueEffect.sourceId,
                 type: 'nanite_plague',
                 value: plagueEffect.value, // Carry over the damage value
-                duration: 8.0, // Reset to full duration
+                duration: 8.0, // Original duration
                 lastTick: 0
               });
             }
@@ -878,7 +997,14 @@ export class GameEngine {
       }
     }
 
-    // Particles
+    // Particles - enforce max limit to prevent runaway accumulation
+    const MAX_PARTICLES = 500;
+    
+    // If we exceed the limit, remove oldest particles first
+    if (this.particles.length > MAX_PARTICLES) {
+      this.particles.splice(0, this.particles.length - MAX_PARTICLES);
+    }
+    
     for (let i = this.particles.length - 1; i >= 0; i--) {
       if (!this.particles[i].update(dt)) {
         this.particles.splice(i, 1);
@@ -1623,24 +1749,36 @@ export class GameEngine {
     for (const e of this.enemies) {
       const px = e.x * cellSize;
       const py = e.y * cellSize;
-      const r = e.subtype.radius * cellSize;
+      
+      // Minion visual distinctions
+      let r = e.subtype.radius * cellSize;
+      let enemyColor = e.subtype.color;
+      let enemyAlpha = 1.0;
+      
+      if (e.isMinion) {
+        r = e.subtype.radius * 0.75 * cellSize; // 25% smaller
+        enemyColor = '#65a30d'; // Darker green (lime-700 vs lime-500)
+        enemyAlpha = 1.0; // Full opacity for visibility
+      }
 
       ctx.save();
+      ctx.globalAlpha = enemyAlpha;
 
       if (e.rezTimer > 0) {
         const progress = 1 - (e.rezTimer / e.maxRezTimer);
-        ctx.globalAlpha = progress;
-        this.drawEnemyShape(ctx, px, py, r, e.subtype.id, e.subtype.color, true, progress, e.facingAngle);
+        this.drawEnemyShape(ctx, px, py, r, e.subtype.id, enemyColor, true, progress, e.facingAngle);
       } else {
         if (e.isStealth) ctx.globalAlpha = 0.25;
-        this.drawEnemyShape(ctx, px, py, r, e.subtype.id, e.subtype.color, false, 0, e.facingAngle);
+        this.drawEnemyShape(ctx, px, py, r, e.subtype.id, enemyColor, false, 0, e.facingAngle);
 
-        // Health bar
-        const hpPercent = e.health / e.maxHealth;
-        ctx.fillStyle = '#ef4444';
-        ctx.fillRect(px - r, py - r - 6, r * 2, 3);
-        ctx.fillStyle = '#22c55e';
-        ctx.fillRect(px - r, py - r - 6, r * 2 * hpPercent, 3);
+        // Health bar (skip for minions)
+        if (!e.isMinion) {
+          const hpPercent = e.health / e.maxHealth;
+          ctx.fillStyle = '#ef4444';
+          ctx.fillRect(px - r, py - r - 6, r * 2, 3);
+          ctx.fillStyle = '#22c55e';
+          ctx.fillRect(px - r, py - r - 6, r * 2 * hpPercent, 3);
+        }
       }
 
       // Stun visual effect
@@ -1708,22 +1846,26 @@ export class GameEngine {
 
       // Nanite plague visual effect (floating purple particles)
       if (e.hasNanitePlague) {
-        const naniteCount = 8;
+        const naniteCount = 8; // Full swarm for visual impact
         const particleSize = 2;
+
+        // Batch render: set shadow once, draw all particles, clear shadow
+        ctx.fillStyle = '#a855f7'; // purple-500
+        ctx.shadowBlur = 4; // Reduced from 6 for performance
+        ctx.shadowColor = '#a855f7';
         
+        ctx.beginPath();
         for (let i = 0; i < naniteCount; i++) {
           const angle = (Math.PI * 2 * i) / naniteCount + (e.nanitePulse * 2);
           const orbitRadius = r * (0.8 + Math.sin(e.nanitePulse * 3 + i) * 0.3);
           const nx = px + Math.cos(angle) * orbitRadius;
           const ny = py + Math.sin(angle) * orbitRadius;
           
-          ctx.fillStyle = '#a855f7'; // purple-500
-          ctx.shadowBlur = 6;
-          ctx.shadowColor = '#a855f7';
-          ctx.beginPath();
+          // Create single path for all particles (batched draw call)
+          ctx.moveTo(nx + particleSize, ny);
           ctx.arc(nx, ny, particleSize, 0, Math.PI * 2);
-          ctx.fill();
         }
+        ctx.fill();
         ctx.shadowBlur = 0;
       }
 

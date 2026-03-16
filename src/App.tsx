@@ -100,6 +100,8 @@ export default function App() {
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [musicMuted, setMusicMuted] = useState(false);
   const [sfxMuted, setSfxMuted] = useState(false);
+  const [musicVolume, setMusicVolume] = useState(30); // 0-100 scale
+  const [sfxVolume, setSfxVolume] = useState(50); // 0-100 scale
 
   // Enable audio on first user interaction
   useEffect(() => {
@@ -134,7 +136,7 @@ export default function App() {
   const toggleMusic = () => {
     setMusicMuted(!musicMuted);
     if (musicMuted) {
-      audioManager.setVolume('music', 0.3);
+      audioManager.setVolume('music', musicVolume / 100);
     } else {
       audioManager.setVolume('music', 0);
     }
@@ -144,9 +146,27 @@ export default function App() {
   const toggleSfx = () => {
     setSfxMuted(!sfxMuted);
     if (sfxMuted) {
-      audioManager.setVolume('sfx', 0.5);
+      audioManager.setVolume('sfx', sfxVolume / 100);
     } else {
       audioManager.setVolume('sfx', 0);
+    }
+  };
+
+  // Handle music volume change
+  const handleMusicVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVolume = parseInt(e.target.value);
+    setMusicVolume(newVolume);
+    if (!musicMuted) {
+      audioManager.setVolume('music', newVolume / 100);
+    }
+  };
+
+  // Handle SFX volume change
+  const handleSfxVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVolume = parseInt(e.target.value);
+    setSfxVolume(newVolume);
+    if (!sfxMuted) {
+      audioManager.setVolume('sfx', newVolume / 100);
     }
   };
 
@@ -637,7 +657,7 @@ export default function App() {
         <div className="p-4 border-b border-cyan-900/50">
           <div className="text-cyan-700 text-xs font-bold uppercase tracking-widest mb-3">Sim Speed</div>
           <div className="flex gap-2">
-            {[1, 2, 3].map((speed) => (
+            {[0.5, 1, 2].map((speed) => (
               <button
                 key={speed}
                 onClick={() => engineRef.current?.setGameSpeed(speed)}
@@ -656,7 +676,7 @@ export default function App() {
         {/* Audio Controls */}
         <div className="p-4 border-b border-cyan-900/50">
           <div className="text-cyan-700 text-xs font-bold uppercase tracking-widest mb-3">Audio</div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 mb-3">
             <button
               onClick={toggleMusic}
               className={`flex-1 py-2 text-xs font-bold border transition-all flex items-center justify-center gap-1 ${
@@ -677,6 +697,33 @@ export default function App() {
             >
               <span className="w-2 h-2 rounded-full bg-current"></span> SFX
             </button>
+          </div>
+          {/* Volume Sliders */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-cyan-800 text-[9px] w-8">Music</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={musicVolume}
+                onChange={handleMusicVolumeChange}
+                className="flex-1 h-1 bg-cyan-900/50 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-cyan-400 [&::-webkit-slider-thumb]:shadow-[0_0_5px_cyan]"
+              />
+              <span className="text-cyan-600 text-[9px] w-6 text-right">{musicVolume}%</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-cyan-800 text-[9px] w-8">SFX</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={sfxVolume}
+                onChange={handleSfxVolumeChange}
+                className="flex-1 h-1 bg-cyan-900/50 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-cyan-400 [&::-webkit-slider-thumb]:shadow-[0_0_5px_cyan]"
+              />
+              <span className="text-cyan-600 text-[9px] w-6 text-right">{sfxVolume}%</span>
+            </div>
           </div>
         </div>
 
