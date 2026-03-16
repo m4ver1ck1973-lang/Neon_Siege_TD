@@ -492,7 +492,9 @@ export class Enemy implements Vector2D {
         // Move along path toward decoy's closest waypoint
         if (this.pathIndex < decoyClosestIdx) {
           // Decoy is ahead - move forward along path
-          const currentSpeed = this.subtype.speed * this.speedMultiplier;
+          // Apply minion speed multiplier if set
+          const minionSpeed = (this as any).minionSpeedMult || 1.0;
+          const currentSpeed = this.subtype.speed * this.speedMultiplier * minionSpeed;
           const target = this.path[this.pathIndex + 1];
           if (target) {
             const newPos = moveTowards(this, target, currentSpeed * dt);
@@ -537,7 +539,9 @@ export class Enemy implements Vector2D {
     const target = this.path[this.pathIndex + 1];
     if (!target) return false; // Reached the end
 
-    const currentSpeed = this.subtype.speed * this.speedMultiplier;
+    // Apply minion speed multiplier if set (stored as custom property)
+    const minionSpeed = (this as any).minionSpeedMult || 1.0;
+    const currentSpeed = this.subtype.speed * this.speedMultiplier * minionSpeed;
     const newPos = moveTowards(this, target, currentSpeed * dt);
     
     // Update facing angle based on movement direction

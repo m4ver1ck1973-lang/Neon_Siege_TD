@@ -103,7 +103,7 @@ export const ENEMIES: EnemyFaction[] = [
   {
     category: "Bio-Hacked",
     subtypes: [
-      { id: "bio_1", name: "Cyber-Rat", health: 15, speed: 5.0, bounty: 5, logic_tag: "swarm_spawn_chance_50", color: "#84cc16", radius: 0.2 }, // lime-500
+      { id: "bio_1", name: "Cyber-Rat", health: 35, speed: 3.5, bounty: 5, logic_tag: "swarm_spawn_chance_85", color: "#84cc16", radius: 0.2 }, // lime-500
       { id: "bio_2", name: "Leaper", health: 80, speed: 3.5, bounty: 30, logic_tag: "path_jump", color: "#4d7c0f", radius: 0.3 }, // lime-700
       { id: "bio_3", name: "Chem-Hulk", health: 350, speed: 1.5, bounty: 60, logic_tag: "death_puddle_slow", color: "#365314", radius: 0.5 } // lime-900
     ]
@@ -257,7 +257,7 @@ const BASE_WAVES = [
   { count: 8, interval: 3.0, enemyId: "hvy_1" },  // Wave 6: Tank intro
   { count: 12, interval: 2.5, enemyId: "hvy_1" }, // Wave 7
   { count: 5, interval: 2.5, enemyId: "hvy_2" },  // Wave 8: Bulldozer
-  { count: 6, interval: 1.5, enemyId: "bio_1" }, // Wave 9: Swarm (nerfed: was 30@0.5s, then 10@1.5s)
+  { count: 8, interval: 1.2, enemyId: "bio_1" }, // Wave 9: Swarm (nerfed: was 30@0.5s)
   { count: 1, interval: 10.0, enemyId: "boss_1" }, // Wave 10: BOSS 1 (CEO)
   { count: 15, interval: 1.0, enemyId: "bio_1" }, // Wave 11: Bio swarms
   { count: 10, interval: 1.5, enemyId: "bio_1" }, // Wave 12 (Mixed in future logic)

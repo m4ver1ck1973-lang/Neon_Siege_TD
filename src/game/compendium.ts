@@ -132,7 +132,7 @@ function getEnemyDescription(id: string, logicTag: string): string {
     hvy_1: "Heavy construction bot. High health, slow movement.",
     hvy_2: "Armored bulldozer. Shielded from frontal attacks.",
     hvy_3: "Demolition unit. Moves in unpredictable bursts.",
-    bio_1: "Infected vermin. 40% chance to spawn 1-2 minions on death.",
+    bio_1: "Infected vermin. 85% chance to spawn 1-5 minions on death.",
     bio_2: "Mutated leaper. Jumps 5 cells ahead every 8 seconds.",
     bio_3: "Toxic brute. Leaves corrosive puddles on death.",
     glitch_1: "Digital wisp. 30% chance to evade projectile attacks.",

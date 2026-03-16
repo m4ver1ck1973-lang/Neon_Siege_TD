@@ -916,11 +916,11 @@ export class GameEngine {
       }
 
       if (e.health <= 0) {
-        // Swarm Spawn on Death Logic - 40% chance to spawn 1-2 minions
+        // Swarm Spawn on Death Logic - 85% chance to spawn 1-5 minions
         if (e.subtype.logic_tag.startsWith('swarm_spawn_chance_')) {
-          if (Math.random() < 0.4 && this.enemies.length < 100) {
-            // Spawn 1-2 minions (reduced from 1-3)
-            const minionCount = Math.floor(Math.random() * 2) + 1; // 1 or 2
+          if (Math.random() < 0.85 && this.enemies.length < 100) {
+            // Spawn 1-5 minions
+            const minionCount = Math.floor(Math.random() * 5) + 1; // 1 to 5
             const maxSpawns = Math.min(minionCount, Math.floor(100 - this.enemies.length));
             
             for (let s = 0; s < maxSpawns; s++) {
@@ -929,9 +929,11 @@ export class GameEngine {
               // Spawn minions directly at parent's position (no offset to avoid off-path spawning)
               minion.x = e.x;
               minion.y = e.y;
-              // Start slightly behind parent on path so they don't all stack
-              minion.pathIndex = e.pathIndex;
+              // Clamp pathIndex to valid range and ensure minion can still move
+              minion.pathIndex = Math.min(e.pathIndex, e.path.length - 2);
               minion.isMinion = true; // Mark as spawned minion for visual distinction
+              // Store desired speed in a custom property (speedMultiplier is overwritten by processEffects)
+              (minion as any).minionSpeedMult = 4.0 / 3.5;
               this.enemies.push(minion);
             }
           }
