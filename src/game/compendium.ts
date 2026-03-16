@@ -111,7 +111,7 @@ function getTowerDescription(id: string, type: string): string {
     // Energy
     nrg_1: "Short-range beam tower. Continuous high damage output.",
     nrg_2: "Chain lightning tower. Jumps between up to 3 targets.",
-    nrg_3: "Creates a gravity well that pulls enemies toward it.",
+    nrg_3: "Creates a ball of lightning that travels backward along the path, dealing massive damage and stunning enemies.",
     // Chemical
     chm_1: "Sprays corrosive acid. Deals damage over time.",
     chm_2: "Releases toxic clouds that linger on the path.",

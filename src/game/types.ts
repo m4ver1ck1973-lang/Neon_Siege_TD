@@ -13,6 +13,8 @@ export interface TowerLevel {
   fireRate: number; // shots per second
   special: string;
   color: string;
+  wellDuration?: number; // For Ball Lightning (seconds)
+  stunChance?: number; // Chance to stun (0-1)
 }
 
 export interface TowerConfig {

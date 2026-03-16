@@ -1,4 +1,4 @@
-export type SoundCategory = 'music' | 'sfx' | 'ui' | 'ambient';
+export type SoundCategory = 'music' | 'sfx' | 'ui' | 'ambient' | 'voice';
 
 export interface SoundConfig {
   volume: number; // 0.0 to 1.0
@@ -11,14 +11,16 @@ export class AudioManager {
   private buffers: Map<string, AudioBuffer> = new Map();
   private gainNodes: Map<SoundCategory, GainNode> = new Map();
   private musicSource: AudioBufferSourceNode | null = null;
-  private musicBuffer: AudioBuffer | null = null;
-  
+  private currentMusicIndex = 0;
+  private musicPlaylist: string[] = ['music_bgm_1', 'music_bgm_2'];
+
   // Volume levels per category (0.0 to 1.0)
   private volumes: Record<SoundCategory, number> = {
     music: 0.3,
     sfx: 0.5,
     ui: 0.4,
-    ambient: 0.2
+    ambient: 0.2,
+    voice: 0.6
   };
 
   private isMuted = false;
@@ -35,7 +37,7 @@ export class AudioManager {
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
 
       // Create gain nodes for each category
-      const categories: SoundCategory[] = ['music', 'sfx', 'ui', 'ambient'];
+      const categories: SoundCategory[] = ['music', 'sfx', 'ui', 'ambient', 'voice'];
       for (const category of categories) {
         const gainNode = this.audioContext.createGain();
         gainNode.gain.value = this.volumes[category];
@@ -49,59 +51,106 @@ export class AudioManager {
       this.isInitialized = true;
       console.log('[AudioManager] Initialized');
       console.log(`[AudioManager] Loaded ${this.buffers.size} sounds`);
-      console.log(`[AudioManager] Music buffer exists: ${this.buffers.has('music_bg')}`);
     } catch (error) {
       console.warn('[AudioManager] Failed to initialize:', error);
     }
   }
 
   private async loadSounds(): Promise<void> {
-    const soundFiles = [
-      // Music
-      { name: 'music_bg', file: 'Cpunk_log.ogg', category: 'music' },
-      // Tower Fire
-      { name: 'tower_zap', file: 'zap.wav', category: 'sfx' },
-      { name: 'tower_laser', file: 'laser.wav', category: 'sfx' },
-      { name: 'tower_canon', file: 'canon.wav', category: 'sfx' },
-      { name: 'tower_rocket', file: 'rocket.wav', category: 'sfx' },
-      // Impacts
-      { name: 'impact_small', file: 'impact_small.wav', category: 'sfx' },
-      { name: 'blip', file: 'blip.wav', category: 'sfx' },
-      { name: 'bloop', file: 'bloop.wav', category: 'sfx' },
-      // Deaths
-      { name: 'death_bzap', file: 'bzap.wav', category: 'sfx' },
-      { name: 'death_zap2', file: 'zap2.wav', category: 'sfx' },
-      { name: 'death_zoink', file: 'zoink.wav', category: 'sfx' },
-      // Skills
-      { name: 'skill_emp', file: 'emp.wav', category: 'sfx' },
-      { name: 'skill_sweep', file: 'sweeps.wav', category: 'sfx' },
-      { name: 'skill_fall', file: 'falling.wav', category: 'sfx' },
-      // UI
-      { name: 'ui_shot', file: 'shot.wav', category: 'ui' },
-      { name: 'ui_shot2', file: 'shot2.wav', category: 'ui' },
-      // Game State
-      { name: 'data_gain', file: 'data_gain.wav', category: 'sfx' },
-      { name: 'data_lost', file: 'data_lost.wav', category: 'sfx' },
-      { name: 'klaxon', file: 'klaxon.wav', category: 'sfx' },
-      { name: 'klaxon2', file: 'klaxon2.wav', category: 'sfx' },
-      // Ambient
-      { name: 'ambient_process', file: 'processing.wav', category: 'ambient' },
-      { name: 'ambient_wind', file: 'wind_down.wav', category: 'ambient' },
-      // Extra SFX
-      { name: 'sfx_blop', file: 'bloop.wav', category: 'sfx' },
-      { name: 'sfx_zap_small', file: 'zap_small.wav', category: 'sfx' },
-      { name: 'sfx_skip_zap', file: 'skip-zap.wav', category: 'sfx' },
-      { name: 'sfx_long_zap', file: 'lomg-zap.wav', category: 'sfx' },
+    // SFX files
+    const sfxFiles = [
+      'blip.wav', 'bloop.wav', 'bzap.wav', 'canon.wav', 'data_gain.wav', 'data_lost.wav',
+      'debuff.wav', 'emp.wav', 'falling.wav', 'impact_small.wav', 'klaxon.wav', 'klaxon2.wav',
+      'laser.wav', 'lomg-zap.wav', 'processing.wav', 'rocket.wav', 'shot.wav', 'shot2.wav',
+      'skip-zap.wav', 'sweeps.wav', 'wind_down.wav', 'zap.wav', 'zap2.wav', 'zap_small.wav', 'zoink.wav'
     ];
 
-    for (const sound of soundFiles) {
+    for (const file of sfxFiles) {
       try {
-        const buffer = await this.loadSoundFile(`/sounds/${sound.file}`);
-        this.buffers.set(sound.name, buffer);
+        const baseName = file.replace('.wav', '').replace('.ogg', '').replace(/\./g, '_');
+        const buffer = await this.loadSoundFile(`/sounds/sfx/${file}`);
+        
+        // Store with sfx_ prefix
+        this.buffers.set(`sfx_${baseName}`, buffer);
+        
+        // Also store without prefix for backwards compatibility
+        this.buffers.set(baseName, buffer);
       } catch (error) {
-        console.warn(`[AudioManager] Failed to load ${sound.file}:`, error);
+        console.warn(`[AudioManager] Failed to load sfx/${file}:`, error);
       }
     }
+
+    // BGM files
+    const bgmFiles = ['Cpunk_log.ogg', 'neonsiege-2.ogg'];
+    for (let i = 0; i < bgmFiles.length; i++) {
+      try {
+        const buffer = await this.loadSoundFile(`/sounds/bgm/${bgmFiles[i]}`);
+        this.buffers.set(`music_bgm_${i + 1}`, buffer);
+        // Also store as music_bg for backwards compatibility
+        if (i === 0) {
+          this.buffers.set('music_bg', buffer);
+        }
+      } catch (error) {
+        console.warn(`[AudioManager] Failed to load bgm/${bgmFiles[i]}:`, error);
+      }
+    }
+
+    // Voice files
+    const voiceFiles = [
+      'circuit_saturated.wav', 'core_exposed.wav', 'data_breach_imminent.wav',
+      'firewall_crumbling.wav', 'grid_capacity_exceeded.wav', 'no_more_nodes.wav',
+      'overclocking.wav', 'protocol_active.wav', 'safety_limiters_off.wav',
+      'sentry_synced.wav', 'stabilizing_link.wav', 'system_overload_activated.wav',
+      'tower_online.wav', 'vector_cleared.wav', 'wave_complete.wav'
+    ];
+
+    for (const file of voiceFiles) {
+      try {
+        const baseName = file.replace('.wav', '').replace('.ogg', '').replace(/\./g, '_');
+        const buffer = await this.loadSoundFile(`/sounds/voice/${file}`);
+        this.buffers.set(`voice_${baseName}`, buffer);
+      } catch (error) {
+        console.warn(`[AudioManager] Failed to load voice/${file}:`, error);
+      }
+    }
+
+    // Create aliases for old sound names
+    this.setupAliases();
+  }
+
+  /**
+   * Setup aliases for backwards compatibility with old sound names
+   */
+  private setupAliases(): void {
+    // Tower sounds
+    this.buffers.set('tower_canon', this.buffers.get('canon'));
+    this.buffers.set('tower_laser', this.buffers.get('laser'));
+    this.buffers.set('tower_zap', this.buffers.get('zap'));
+    this.buffers.set('tower_rocket', this.buffers.get('rocket'));
+    
+    // Death sounds
+    this.buffers.set('death_bzap', this.buffers.get('bzap'));
+    this.buffers.set('death_zap2', this.buffers.get('zap2'));
+    this.buffers.set('death_zoink', this.buffers.get('zoink'));
+    
+    // Skill sounds
+    this.buffers.set('skill_emp', this.buffers.get('emp'));
+    this.buffers.set('skill_fall', this.buffers.get('falling'));
+    this.buffers.set('skill_sweep', this.buffers.get('sweeps'));
+    
+    // UI sounds
+    this.buffers.set('ui_shot', this.buffers.get('shot'));
+    this.buffers.set('ui_shot2', this.buffers.get('shot2'));
+    
+    // SFX aliases
+    this.buffers.set('sfx_zap_small', this.buffers.get('zap_small'));
+    this.buffers.set('sfx_skip_zap', this.buffers.get('skip_zap'));
+    this.buffers.set('sfx_long_zap', this.buffers.get('lomg_zap'));
+    this.buffers.set('sfx_blop', this.buffers.get('bloop'));
+    
+    // Ambient aliases
+    this.buffers.set('ambient_process', this.buffers.get('processing'));
+    this.buffers.set('ambient_wind', this.buffers.get('wind_down'));
   }
 
   private async loadSoundFile(url: string): Promise<AudioBuffer> {
@@ -111,10 +160,21 @@ export class AudioManager {
   }
 
   play(soundName: string, overrideVolume?: number): void {
-    if (!this.isInitialized || this.isMuted) return;
+    // Auto-initialize if not already done
+    if (!this.isInitialized) {
+      this.initialize().catch(console.warn);
+      return; // Sound will play on next call after initialization
+    }
+    
+    if (this.isMuted) return;
 
     const buffer = this.buffers.get(soundName);
     if (!buffer || !this.audioContext) return;
+
+    // Resume audio context if suspended (browser policy)
+    if (this.audioContext.state === 'suspended') {
+      this.audioContext.resume().catch(console.warn);
+    }
 
     const source = this.audioContext.createBufferSource();
     source.buffer = buffer;
@@ -124,6 +184,7 @@ export class AudioManager {
     if (soundName.startsWith('music')) category = 'music';
     else if (soundName.startsWith('ui')) category = 'ui';
     else if (soundName.startsWith('ambient')) category = 'ambient';
+    else if (soundName.startsWith('voice')) category = 'voice';
 
     const gainNode = this.gainNodes.get(category);
     if (gainNode) {
@@ -157,19 +218,30 @@ export class AudioManager {
   }
 
   private _startMusic(): void {
-    // Get music buffer from loaded sounds
-    const musicBuffer = this.buffers.get('music_bg');
-    if (!musicBuffer) {
-      console.warn('[AudioManager] Music buffer not loaded');
-      return;
-    }
-
     // Stop existing music
     this.stopMusic();
 
+    // Get current track from playlist
+    const trackName = this.musicPlaylist[this.currentMusicIndex];
+    const musicBuffer = this.buffers.get(trackName);
+    
+    if (!musicBuffer) {
+      console.warn(`[AudioManager] Music track ${trackName} not loaded`);
+      return;
+    }
+
     this.musicSource = this.audioContext!.createBufferSource();
     this.musicSource.buffer = musicBuffer;
-    this.musicSource.loop = true;
+    this.musicSource.loop = false; // Don't loop individual tracks
+
+    // When track ends, play next track
+    this.musicSource.onended = () => {
+      this.currentMusicIndex = (this.currentMusicIndex + 1) % this.musicPlaylist.length;
+      // Only auto-play next track if music is still supposed to be playing
+      if (this.musicSource === null && !this.isMuted) {
+        this._startMusic();
+      }
+    };
 
     const gainNode = this.gainNodes.get('music');
     if (gainNode) {
@@ -177,7 +249,7 @@ export class AudioManager {
     }
 
     this.musicSource.start(0);
-    console.log('[AudioManager] Playing music');
+    console.log(`[AudioManager] Playing music: ${trackName}`);
   }
 
   /**
@@ -195,6 +267,37 @@ export class AudioManager {
     } else if (this.audioContext && this.audioContext.state === 'running' && !this.musicSource) {
       // Audio already enabled but music hasn't started
       this._startMusic();
+    }
+  }
+
+  /**
+   * Play a voice line by key name
+   */
+  playVoice(lineKey: string): void {
+    const voiceName = `voice_${lineKey}`;
+    this.play(voiceName);
+  }
+
+  /**
+   * Play a voice line by phrase key from voice.txt
+   * Maps standard lines to cyberpunk variations
+   */
+  playVoiceLine(context: 'grid_full' | 'losing' | 'win_wave' | 'build' | 'ultimate'): void {
+    const voiceLines: Record<string, string[]> = {
+      grid_full: ['voice_grid_capacity_exceeded', 'voice_circuit_saturated'],
+      losing: ['voice_data_breach_imminent', 'voice_firewall_crumbling', 'voice_core_exposed'],
+      win_wave: ['voice_wave_complete', 'voice_vector_cleared', 'voice_stabilizing_link'],
+      build: ['voice_tower_online', 'voice_sentry_synced', 'voice_protocol_active'],
+      ultimate: ['voice_system_overload_activated', 'voice_safety_limiters_off', 'voice_overclocking']
+    };
+
+    const options = voiceLines[context] || [];
+    if (options.length > 0) {
+      const randomLine = options[Math.floor(Math.random() * options.length)];
+      const buffer = this.buffers.get(randomLine);
+      if (buffer) {
+        this.play(randomLine);
+      }
     }
   }
 

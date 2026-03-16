@@ -2,6 +2,7 @@ import { Vector2D, EnemySubtype, TowerLevel, StatusEffect } from './types';
 import { distance, moveTowards, normalize } from './math';
 import { TOWERS } from './config';
 import { EffectManager } from './EffectManager';
+import { audioManager } from './audioManager';
 
 export class DamageNumber {
   x: number;
@@ -27,6 +28,8 @@ export class DamageNumber {
   }
 }
 
+export type ParticleShape = 'circle' | 'spark' | 'tron' | 'square';
+
 export class Particle {
   x: number;
   y: number;
@@ -36,8 +39,10 @@ export class Particle {
   maxLife: number;
   color: string;
   size: number;
+  shape: ParticleShape;
+  angle: number; // For oriented shapes like sparks
 
-  constructor(x: number, y: number, color: string) {
+  constructor(x: number, y: number, color: string, shape: ParticleShape = 'circle') {
     this.x = x;
     this.y = y;
     const angle = Math.random() * Math.PI * 2;
@@ -48,6 +53,8 @@ export class Particle {
     this.life = this.maxLife;
     this.color = color;
     this.size = Math.random() * 0.15 + 0.05;
+    this.shape = shape;
+    this.angle = angle; // Face direction of travel
   }
 
   update(dt: number): boolean {
@@ -608,6 +615,9 @@ export class Tower implements Vector2D {
       if (this.pulseTimer <= 0) {
         this.pulseTimer = 1.0; // Pulse every 1 second
         
+        // Play debuff pulse sound
+        audioManager.play('debuff');
+
         // Apply AOE effect to ALL enemies in range
         for (const enemy of enemies) {
           if (enemy.isStealth) continue;
@@ -744,5 +754,126 @@ export class Decoy {
 
   takeDamage(amount: number) {
     this.health = Math.max(0, this.health - amount);
+  }
+}
+
+export class BallLightning {
+  id: string = crypto.randomUUID();
+  x: number;
+  y: number;
+  duration: number;
+  maxDuration: number;
+  damage: number;
+  stunChance: number;
+  color: string;
+  moveSpeed: number;
+  pathIndex: number; // Current path segment index
+  path: { x: number, y: number }[]; // Reference to path waypoints
+  t: number; // Position along current segment (0-1)
+  direction: number; // 1 = forward along path, -1 = backward
+
+  constructor(x: number, y: number, duration: number, damage: number, stunChance: number, color: string, path: { x: number, y: number }[], startPathIndex: number, startT: number) {
+    this.x = x;
+    this.y = y;
+    this.duration = duration;
+    this.maxDuration = duration;
+    this.damage = damage;
+    this.stunChance = stunChance;
+    this.color = color;
+    this.moveSpeed = 2.5; // Grid units per second
+    this.pathIndex = startPathIndex;
+    this.path = path;
+    this.t = startT;
+    this.direction = -1; // Move backward (toward path start)
+  }
+
+  update(dt: number): boolean {
+    this.duration -= dt;
+    
+    if (this.pathIndex < 0 || this.pathIndex >= this.path.length - 1) {
+      return false; // Reached end of path
+    }
+
+    // Move along current segment
+    const p1 = this.path[this.pathIndex];
+    const p2 = this.path[this.pathIndex + 1];
+    const segLength = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+    
+    if (segLength === 0) {
+      this.pathIndex += this.direction;
+      return this.duration > 0;
+    }
+
+    // Move backward along segment
+    this.t -= (this.moveSpeed * dt) / segLength;
+
+    // Check if we've reached the start of this segment
+    if (this.t <= 0 && this.direction < 0) {
+      this.pathIndex--;
+      this.t = 1; // Start at end of previous segment
+      
+      if (this.pathIndex < 0) {
+        return false; // Reached start of path
+      }
+    }
+    // Check if we've reached the end of this segment (shouldn't happen going backward)
+    else if (this.t >= 1 && this.direction > 0) {
+      this.pathIndex++;
+      this.t = 0;
+      
+      if (this.pathIndex >= this.path.length - 1) {
+        return false; // Reached end of path
+      }
+    }
+
+    // Update position (path coords are grid indices, add 0.5 for cell center)
+    const currentP1 = this.path[this.pathIndex];
+    const currentP2 = this.path[this.pathIndex + 1];
+    this.x = currentP1.x + (currentP2.x - currentP1.x) * this.t + 0.5;
+    this.y = currentP1.y + (currentP2.y - currentP1.y) * this.t + 0.5;
+
+    return this.duration > 0;
+  }
+}
+
+export class GridZone {
+  id: string = crypto.randomUUID();
+  cells: { x: number, y: number }[]; // 3 grid cell INDICES (integers)
+  duration: number;
+  maxDuration: number;
+  damage: number;
+  color: string;
+  centerX: number; // Center position for rendering
+  centerY: number;
+
+  constructor(gridX: number, gridY: number, duration: number, damage: number, color: string, horizontal: boolean, direction: number) {
+    this.duration = duration;
+    this.maxDuration = duration;
+    this.damage = damage;
+    this.color = color;
+    this.centerX = gridX + 0.5;
+    this.centerY = gridY + 0.5;
+    
+    // Create 3 consecutive cells along the path direction (store as integers)
+    if (horizontal) {
+      // Horizontal path: cells side by side
+      this.cells = [
+        { x: gridX, y: gridY },
+        { x: gridX + direction, y: gridY },
+        { x: gridX + direction * 2, y: gridY }
+      ];
+    } else {
+      // Vertical path: cells stacked
+      this.cells = [
+        { x: gridX, y: gridY },
+        { x: gridX, y: gridY + direction },
+        { x: gridX, y: gridY + direction * 2 }
+      ];
+    }
+  }
+
+  update(dt: number): boolean {
+    this.duration -= dt;
+    return this.duration > 0;
   }
 }

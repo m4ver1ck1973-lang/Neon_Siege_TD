@@ -22,7 +22,7 @@ export const TOWERS: TowerConfig[] = [
     levels: [
       { id: "nrg_1", name: "Plasma Torch", cost: 250, powerDraw: 10, damage: 40, range: 2.5, fireRate: 5.0, special: "continuous_beam", color: "#94a3b8" },
       { id: "nrg_2", name: "Arc Pylon", cost: 650, powerDraw: 25, damage: 30, range: 4.5, fireRate: 1.0, special: "chain_3", color: "#38bdf8" },
-      { id: "nrg_3", name: "Singularity Well", cost: 2000, powerDraw: 60, damage: 60, range: 5.0, fireRate: 0.5, special: "pull_vortex", color: "#a855f7" }
+      { id: "nrg_3", name: "Ball Lightning", cost: 2000, powerDraw: 60, damage: 100, range: 5.0, fireRate: 0.4, special: "ball_lightning", wellDuration: 5.0, stunChance: 0.2, color: "#a855f7" }
     ]
   },
   {
@@ -56,15 +56,15 @@ export const ACTIVE_SKILLS: SkillConfig[] = [
   },
   {
     id: "skl_2",
-    name: "Holographic Decoy",
-    cooldown: 45.0,
+    name: "Grid Overload",
+    cooldown: 35.0,
     placementType: "Path",
-    color: "#a855f7", // purple-500
-    description: "Projects a holographic zone. Enemies that enter are frozen in place.",
-    duration: 8.0,
+    color: "#f97316", // orange-500
+    description: "Overloads a path segment with raw data. Enemies take damage while standing in it.",
+    damage: 60,
+    duration: 10.0,
     effects: {
-      health: 500,
-      aggro_radius: 3.0
+      radius: 2.5
     }
   },
   {

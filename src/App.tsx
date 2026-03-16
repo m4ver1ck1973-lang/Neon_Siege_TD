@@ -2,10 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { GameEngine } from './game/engine';
 import { GameState, LevelConfig } from './game/types';
 import { TOWERS, LEVELS, ACTIVE_SKILLS } from './game/config';
-import { Coins, Crosshair, X, ArrowUpCircle, Trash2, Triangle, Hexagon, Square, Diamond, Play, Zap, BookOpen, Circle } from 'lucide-react';
+import { Coins, Crosshair, X, ArrowUpCircle, Trash2, Triangle, Hexagon, Square, Diamond, Play, Zap, BookOpen, Circle, Hammer } from 'lucide-react';
 import { Tower } from './game/entities';
 import { TOWER_COMPENDIUM, ENEMY_COMPENDIUM, SKILL_COMPENDIUM, TowerEntry, EnemyEntry, SkillEntry } from './game/compendium';
 import { audioManager } from './game/audioManager';
+import MapEditor from './MapEditor';
 
 function TowerCard({ tower }: { tower: TowerEntry; key?: React.Key }) {
   return (
@@ -81,6 +82,7 @@ function SkillCard({ skill }: { skill: SkillEntry; key?: React.Key }) {
 
 export default function App() {
   const [currentLevelIndex, setCurrentLevelIndex] = useState<number | null>(null);
+  const [showMapEditor, setShowMapEditor] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<GameEngine | null>(null);
   const [gameState, setGameState] = useState<GameState>({
@@ -88,7 +90,7 @@ export default function App() {
     maxPower: 100, usedPower: 0, isBrownout: false, status: 'playing',
     skillCooldowns: {}
   });
-  
+
   const [radialMenu, setRadialMenu] = useState<{gridX: number, gridY: number, x: number, y: number} | null>(null);
   const [hoveredTower, setHoveredTower] = useState<any>(null);
   const [selectedPlacedTower, setSelectedPlacedTower] = useState<Tower | null>(null);
@@ -96,6 +98,8 @@ export default function App() {
   const [showCompendium, setShowCompendium] = useState(false);
   const [compendiumTab, setCompendiumTab] = useState<'towers' | 'enemies' | 'skills'>('towers');
   const [audioEnabled, setAudioEnabled] = useState(false);
+  const [musicMuted, setMusicMuted] = useState(false);
+  const [sfxMuted, setSfxMuted] = useState(false);
 
   // Enable audio on first user interaction
   useEffect(() => {
@@ -114,6 +118,26 @@ export default function App() {
       document.removeEventListener('keydown', enableAudioOnInteraction);
     };
   }, []);
+
+  // Handle music mute toggle
+  const toggleMusic = () => {
+    setMusicMuted(!musicMuted);
+    if (musicMuted) {
+      audioManager.setVolume('music', 0.3);
+    } else {
+      audioManager.setVolume('music', 0);
+    }
+  };
+
+  // Handle SFX mute toggle
+  const toggleSfx = () => {
+    setSfxMuted(!sfxMuted);
+    if (sfxMuted) {
+      audioManager.setVolume('sfx', 0.5);
+    } else {
+      audioManager.setVolume('sfx', 0);
+    }
+  };
 
   useEffect(() => {
     if (currentLevelIndex === null || !canvasRef.current) return;
@@ -219,6 +243,11 @@ export default function App() {
 
   const powerPercent = Math.min(100, (gameState.usedPower / gameState.maxPower) * 100) || 0;
 
+  // Map Editor View (check first to override other views)
+  if (showMapEditor) {
+    return <MapEditor onClose={() => setShowMapEditor(false)} />;
+  }
+
   if (currentLevelIndex === null) {
     return (
       <>
@@ -231,12 +260,20 @@ export default function App() {
               <span className="w-4 h-4 bg-cyan-400 rounded-full animate-pulse"></span>
             </h1>
             <p className="text-cyan-700 uppercase tracking-widest text-sm">Select Sector to Defend</p>
-            <button
-              onClick={() => setShowCompendium(true)}
-              className="mt-4 px-6 py-2 bg-cyan-950/50 border border-cyan-700 text-cyan-400 font-bold uppercase tracking-widest text-xs hover:bg-cyan-900 hover:border-cyan-400 transition-all flex items-center gap-2 mx-auto"
-            >
-              <BookOpen size={16} /> Open Compendium
-            </button>
+            <div className="flex gap-4 mt-4 justify-center">
+              <button
+                onClick={() => setShowCompendium(true)}
+                className="px-6 py-2 bg-cyan-950/50 border border-cyan-700 text-cyan-400 font-bold uppercase tracking-widest text-xs hover:bg-cyan-900 hover:border-cyan-400 transition-all flex items-center gap-2"
+              >
+                <BookOpen size={16} /> Open Compendium
+              </button>
+              <button
+                onClick={() => setShowMapEditor(true)}
+                className="px-6 py-2 bg-purple-950/50 border border-purple-700 text-purple-400 font-bold uppercase tracking-widest text-xs hover:bg-purple-900 hover:border-purple-400 transition-all flex items-center gap-2"
+              >
+                <Hammer size={16} /> Map Editor
+              </button>
+            </div>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -369,6 +406,12 @@ export default function App() {
           >
             <span className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></span>
             NEON_SIEGE_OS
+          </button>
+          <button
+            onClick={() => setShowMapEditor(true)}
+            className="text-purple-400 font-bold flex items-center gap-2 hover:text-white transition-colors"
+          >
+            <Hammer size={14} /> Map Editor
           </button>
           <div className="flex items-center gap-6 text-cyan-700">
             <span>SECTOR: <span className="text-white">{LEVELS[currentLevelIndex].name.split(':')[0]}</span></span>
@@ -599,6 +642,33 @@ export default function App() {
           </div>
         </div>
 
+        {/* Audio Controls */}
+        <div className="p-4 border-b border-cyan-900/50">
+          <div className="text-cyan-700 text-xs font-bold uppercase tracking-widest mb-3">Audio</div>
+          <div className="flex gap-2">
+            <button
+              onClick={toggleMusic}
+              className={`flex-1 py-2 text-xs font-bold border transition-all flex items-center justify-center gap-1 ${
+                musicMuted
+                  ? 'bg-rose-950/50 border-rose-700 text-rose-400'
+                  : 'bg-cyan-950/50 border-cyan-700 text-cyan-400 hover:border-cyan-500'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-current"></span> Music
+            </button>
+            <button
+              onClick={toggleSfx}
+              className={`flex-1 py-2 text-xs font-bold border transition-all flex items-center justify-center gap-1 ${
+                sfxMuted
+                  ? 'bg-rose-950/50 border-rose-700 text-rose-400'
+                  : 'bg-cyan-950/50 border-cyan-700 text-cyan-400 hover:border-cyan-500'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-current"></span> SFX
+            </button>
+          </div>
+        </div>
+
         {/* Active Skills */}
         <div className="p-4 border-b border-cyan-900/50 flex-grow">
           <div className="text-cyan-700 text-xs font-bold uppercase tracking-widest mb-3">Active Skills</div>
@@ -606,6 +676,8 @@ export default function App() {
             {ACTIVE_SKILLS.map(skill => {
               const cooldown = gameState.skillCooldowns[skill.id] || 0;
               const isSelected = selectedSkillId === skill.id;
+              const maxCooldown = skill.cooldown;
+              const cooldownProgress = maxCooldown > 0 ? (maxCooldown - cooldown) / maxCooldown : 0;
               return (
                 <button
                   key={skill.id}
@@ -615,11 +687,11 @@ export default function App() {
                       if (isSelected && engineRef.current) engineRef.current.setSkillPreview(null);
                     }
                   }}
-                  className={`w-full h-14 border bg-black flex items-center gap-3 px-3 relative group transition-all ${
+                  className={`w-full h-14 border bg-black flex items-center gap-3 px-3 relative group transition-all overflow-hidden ${
                     isSelected ? 'border-cyan-400 shadow-[0_0_10px_cyan]' : 'border-cyan-900/50 hover:border-cyan-500'
                   } ${cooldown > 0 ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                 >
-                  <div className="w-10 h-10 rounded border flex items-center justify-center font-bold text-lg shrink-0" 
+                  <div className="w-10 h-10 rounded border flex items-center justify-center font-bold text-lg shrink-0"
                     style={{ backgroundColor: skill.color + '20', borderColor: skill.color, color: skill.color }}>
                     {skill.name[0]}
                   </div>
@@ -628,9 +700,16 @@ export default function App() {
                     <div className="text-[9px] text-cyan-700">{skill.cooldown}s CD</div>
                   </div>
 
+                  {/* Cooldown progress bar - colored strip at bottom */}
                   {cooldown > 0 && (
-                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-sm font-mono text-white font-bold">
-                      {Math.ceil(cooldown)}s
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-800">
+                      <div 
+                        className="h-full transition-all duration-100"
+                        style={{ 
+                          width: `${cooldownProgress * 100}%`,
+                          backgroundColor: skill.color 
+                        }}
+                      />
                     </div>
                   )}
 
