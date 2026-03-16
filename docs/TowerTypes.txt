@@ -1,0 +1,7 @@
+
+Tower Type	Level 1		Level 2			Level 3
+Kinetic		Slug-Turret	Autocannon		Rail-Accelerator
+Debuff		Signal Jammer	Neural Spam Rig		System Crasher
+Energy		Plasma Torch	Arc Pylon		otSingularity Well
+Chemical	Acid Sprayer	Bio-Hazzard Vent	Nanite Plague
+Economic	Solar Array	Power Substation	The Fusion Core

@@ -223,6 +223,7 @@ export class Enemy implements Vector2D {
   // Visual state
   hasCorrosion: boolean = false;
   corrosionPulse: number = 0; // For pulsing glow effect
+  corrosionOffsets: number[] = []; // For amorphous blob shape
   hasNanitePlague: boolean = false; // For nanite particle effects
   nanitePulse: number = 0; // For animating nanite particles
   facingAngle: number = 0; // Radians, for directional rendering
@@ -296,6 +297,7 @@ export class Enemy implements Vector2D {
     this.damageVulnerabilityMultiplier = 1.0;
     this.isStunned = false; // Reset stun state
     this.hasCorrosion = false; // Reset corrosion visual state
+    this.corrosionOffsets = []; // Reset amorphous blob shape
     let maxSlow = 0;
     let totalArmorShred = 0;
 
@@ -326,6 +328,14 @@ export class Enemy implements Vector2D {
       // Track corrosion for visual effects
       if (effect.type === 'corrosion') {
         this.hasCorrosion = true;
+        
+        // Initialize corrosion offsets for amorphous blob shape (if not already set)
+        if (this.corrosionOffsets.length === 0) {
+          for (let i = 0; i < 8; i++) {
+            this.corrosionOffsets.push(0.7 + Math.random() * 0.4); // 0.7 to 1.1
+          }
+        }
+        
         // Update pulse timer for visual effect
         this.corrosionPulse += dt;
         if (this.corrosionPulse > 0.4) this.corrosionPulse = 0;
@@ -846,7 +856,7 @@ export class GridZone {
   centerX: number; // Center position for rendering
   centerY: number;
 
-  constructor(gridX: number, gridY: number, duration: number, damage: number, color: string, horizontal: boolean, direction: number) {
+  constructor(gridX: number, gridY: number, duration: number, damage: number, color: string, path: {x: number, y: number}[]) {
     this.duration = duration;
     this.maxDuration = duration;
     this.damage = damage;
@@ -854,22 +864,112 @@ export class GridZone {
     this.centerX = gridX + 0.5;
     this.centerY = gridY + 0.5;
     
-    // Create 3 consecutive cells along the path direction (store as integers)
-    if (horizontal) {
-      // Horizontal path: cells side by side
-      this.cells = [
+    // Find 3 consecutive cells along the path, following the path around corners
+    this.cells = this.getCellsAlongPath(gridX, gridY, path);
+  }
+
+  private getCellsAlongPath(gridX: number, gridY: number, path: {x: number, y: number}[]): {x: number, y: number}[] {
+    const cells: {x: number, y: number}[] = [];
+    
+    // First, find which path segment contains the placement cell
+    let segmentIndex = -1;
+    let bestDistance = Infinity;
+    
+    for (let i = 0; i < path.length - 1; i++) {
+      const p1 = path[i];
+      const p2 = path[i + 1];
+      
+      // Check horizontal segment
+      if (p1.y === p2.y && gridY === p1.y) {
+        const minX = Math.min(p1.x, p2.x);
+        const maxX = Math.max(p1.x, p2.x);
+        if (gridX >= minX && gridX <= maxX) {
+          const distFromStart = p2.x > p1.x ? (gridX - p1.x) : (p1.x - gridX);
+          if (distFromStart < bestDistance) {
+            bestDistance = distFromStart;
+            segmentIndex = i;
+          }
+        }
+      }
+      
+      // Check vertical segment
+      if (p1.x === p2.x && gridX === p1.x) {
+        const minY = Math.min(p1.y, p2.y);
+        const maxY = Math.max(p1.y, p2.y);
+        if (gridY >= minY && gridY <= maxY) {
+          const distFromStart = p2.y > p1.y ? (gridY - p1.y) : (p1.y - gridY);
+          if (distFromStart < bestDistance) {
+            bestDistance = distFromStart;
+            segmentIndex = i;
+          }
+        }
+      }
+    }
+    
+    if (segmentIndex === -1) {
+      // Fallback: just use 3 cells to the right
+      return [
         { x: gridX, y: gridY },
-        { x: gridX + direction, y: gridY },
-        { x: gridX + direction * 2, y: gridY }
-      ];
-    } else {
-      // Vertical path: cells stacked
-      this.cells = [
-        { x: gridX, y: gridY },
-        { x: gridX, y: gridY + direction },
-        { x: gridX, y: gridY + direction * 2 }
+        { x: gridX + 1, y: gridY },
+        { x: gridX + 2, y: gridY }
       ];
     }
+    
+    // Now trace 3 cells along the path from the placement position
+    let currentX = gridX;
+    let currentY = gridY;
+    let currentSegment = segmentIndex;
+    let cellsAdded = 0;
+    
+    // Add the first cell (placement position)
+    cells.push({ x: currentX, y: currentY });
+    cellsAdded++;
+    
+    while (cellsAdded < 3 && currentSegment < path.length - 1) {
+      const p1 = path[currentSegment];
+      const p2 = path[currentSegment + 1];
+      
+      if (p1.y === p2.y) { // Horizontal segment
+        const direction = p2.x > p1.x ? 1 : -1;
+        const segmentEnd = direction > 0 ? Math.max(p1.x, p2.x) : Math.min(p1.x, p2.x);
+        
+        // Add cells along this segment until we reach the end or have 3 cells
+        while (cellsAdded < 3) {
+          const nextX = currentX + direction;
+          
+          // Check if we've reached/passed the end of this segment
+          if ((direction > 0 && nextX > segmentEnd) || (direction < 0 && nextX < segmentEnd)) {
+            break; // Move to next segment
+          }
+          
+          currentX = nextX;
+          cells.push({ x: currentX, y: currentY });
+          cellsAdded++;
+        }
+      } else if (p1.x === p2.x) { // Vertical segment
+        const direction = p2.y > p1.y ? 1 : -1;
+        const segmentEnd = direction > 0 ? Math.max(p1.y, p2.y) : Math.min(p1.y, p2.y);
+        
+        // Add cells along this segment until we reach the end or have 3 cells
+        while (cellsAdded < 3) {
+          const nextY = currentY + direction;
+          
+          // Check if we've reached/passed the end of this segment
+          if ((direction > 0 && nextY > segmentEnd) || (direction < 0 && nextY < segmentEnd)) {
+            break; // Move to next segment
+          }
+          
+          currentY = nextY;
+          cells.push({ x: currentX, y: currentY });
+          cellsAdded++;
+        }
+      }
+      
+      // Move to next segment
+      currentSegment++;
+    }
+    
+    return cells;
   }
 
   update(dt: number): boolean {

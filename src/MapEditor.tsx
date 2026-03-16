@@ -88,11 +88,11 @@ export default function MapEditor({ onClose }: { onClose?: () => void }) {
   // Validate map
   const validateMap = useCallback(() => {
     const errors: string[] = [];
-    
+
     if (path.length < 2) {
       errors.push('Path must have at least 2 waypoints (start and end)');
     }
-    
+
     for (const wp of path) {
       if (wp.x < 0 || wp.x >= gridWidth) {
         errors.push(`Waypoint (${wp.x}, ${wp.y}) is outside grid bounds (x)`);
@@ -101,14 +101,26 @@ export default function MapEditor({ onClose }: { onClose?: () => void }) {
         errors.push(`Waypoint (${wp.x}, ${wp.y}) is outside grid bounds (y)`);
       }
     }
-    
+
     // Check for consecutive duplicate waypoints
     for (let i = 1; i < path.length; i++) {
       if (path[i].x === path[i - 1].x && path[i].y === path[i - 1].y) {
         errors.push(`Duplicate waypoint at index ${i}`);
       }
     }
-    
+
+    // Check for diagonal segments (not supported)
+    for (let i = 1; i < path.length; i++) {
+      const prev = path[i - 1];
+      const curr = path[i];
+      const isHorizontal = prev.y === curr.y;
+      const isVertical = prev.x === curr.x;
+      
+      if (!isHorizontal && !isVertical) {
+        errors.push(`Diagonal segment detected (from (${prev.x}, ${prev.y}) to (${curr.x}, ${curr.y})). Only horizontal and vertical segments are supported.`);
+      }
+    }
+
     setValidationErrors(errors);
     return errors.length === 0;
   }, [path, gridWidth, gridHeight]);
@@ -681,7 +693,15 @@ export default function MapEditor({ onClose }: { onClose?: () => void }) {
             <X size={20} />
           </button>
         </div>
-        
+
+        {/* Limitation Notice */}
+        <div className="bg-amber-950/30 border border-amber-700/50 p-2 rounded">
+          <div className="text-amber-400 text-[9px] font-bold uppercase tracking-widest mb-1">⚠ Limitation</div>
+          <div className="text-amber-500 text-[9px] leading-tight">
+            Diagonal paths are <strong className="text-amber-300">not supported</strong> in-game. Use only horizontal and vertical segments.
+          </div>
+        </div>
+
         {/* Tools */}
         <div>
           <div className="text-cyan-700 text-[10px] font-bold uppercase tracking-widest mb-2">Tools</div>
@@ -962,6 +982,12 @@ export default function MapEditor({ onClose }: { onClose?: () => void }) {
               <li>• <strong className="text-red-500">Red</strong> = End point</li>
               <li>• Export creates a JSON file for use in config.ts</li>
             </ul>
+            <div className="mt-2 pt-2 border-t border-cyan-900/30">
+              <div className="text-amber-500 text-[9px] font-bold uppercase tracking-widest mb-1">⚠ Important</div>
+              <div className="text-amber-600 text-[9px]">
+                Only use <strong className="text-amber-400">horizontal</strong> and <strong className="text-amber-400">vertical</strong> path segments. Diagonal paths are not supported.
+              </div>
+            </div>
           </div>
         </div>
       </div>

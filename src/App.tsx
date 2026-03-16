@@ -103,19 +103,30 @@ export default function App() {
 
   // Enable audio on first user interaction
   useEffect(() => {
+    let audioEnabled = false;
+    
     const enableAudioOnInteraction = async () => {
+      if (audioEnabled) return;
+      audioEnabled = true;
+      
       await audioManager.enableAudio();
       setAudioEnabled(true);
+      
+      // Remove all listeners
       document.removeEventListener('click', enableAudioOnInteraction);
       document.removeEventListener('keydown', enableAudioOnInteraction);
+      document.removeEventListener('touchstart', enableAudioOnInteraction);
     };
 
+    // Listen for any user interaction
     document.addEventListener('click', enableAudioOnInteraction, { once: true });
     document.addEventListener('keydown', enableAudioOnInteraction, { once: true });
+    document.addEventListener('touchstart', enableAudioOnInteraction, { once: true });
 
     return () => {
       document.removeEventListener('click', enableAudioOnInteraction);
       document.removeEventListener('keydown', enableAudioOnInteraction);
+      document.removeEventListener('touchstart', enableAudioOnInteraction);
     };
   }, []);
 

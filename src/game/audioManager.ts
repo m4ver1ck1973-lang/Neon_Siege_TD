@@ -12,7 +12,7 @@ export class AudioManager {
   private gainNodes: Map<SoundCategory, GainNode> = new Map();
   private musicSource: AudioBufferSourceNode | null = null;
   private currentMusicIndex = 0;
-  private musicPlaylist: string[] = ['music_bgm_1', 'music_bgm_2'];
+  private musicPlaylist: string[] = ['music_bgm_2', 'music_bgm_1'];
 
   // Volume levels per category (0.0 to 1.0)
   private volumes: Record<SoundCategory, number> = {
@@ -57,30 +57,7 @@ export class AudioManager {
   }
 
   private async loadSounds(): Promise<void> {
-    // SFX files
-    const sfxFiles = [
-      'blip.wav', 'bloop.wav', 'bzap.wav', 'canon.wav', 'data_gain.wav', 'data_lost.wav',
-      'debuff.wav', 'emp.wav', 'falling.wav', 'impact_small.wav', 'klaxon.wav', 'klaxon2.wav',
-      'laser.wav', 'lomg-zap.wav', 'processing.wav', 'rocket.wav', 'shot.wav', 'shot2.wav',
-      'skip-zap.wav', 'sweeps.wav', 'wind_down.wav', 'zap.wav', 'zap2.wav', 'zap_small.wav', 'zoink.wav'
-    ];
-
-    for (const file of sfxFiles) {
-      try {
-        const baseName = file.replace('.wav', '').replace('.ogg', '').replace(/\./g, '_');
-        const buffer = await this.loadSoundFile(`/sounds/sfx/${file}`);
-        
-        // Store with sfx_ prefix
-        this.buffers.set(`sfx_${baseName}`, buffer);
-        
-        // Also store without prefix for backwards compatibility
-        this.buffers.set(baseName, buffer);
-      } catch (error) {
-        console.warn(`[AudioManager] Failed to load sfx/${file}:`, error);
-      }
-    }
-
-    // BGM files
+    // Load BGM FIRST so music can start immediately
     const bgmFiles = ['Cpunk_log.ogg', 'neonsiege-2.ogg'];
     for (let i = 0; i < bgmFiles.length; i++) {
       try {
@@ -94,8 +71,37 @@ export class AudioManager {
         console.warn(`[AudioManager] Failed to load bgm/${bgmFiles[i]}:`, error);
       }
     }
+    console.log('[AudioManager] BGM loaded, music ready');
 
-    // Voice files
+    // Load SFX in parallel for faster loading
+    const sfxFiles = [
+      'blip.wav', 'bloop.wav', 'bzap.wav', 'canon.wav', 'data_gain.wav', 'data_lost.wav',
+      'debuff.wav', 'emp.wav', 'falling.wav', 'impact_small.wav', 'klaxon.wav', 'klaxon2.wav',
+      'laser.wav', 'lomg-zap.wav', 'processing.wav', 'rocket.wav', 'shot.wav', 'shot2.wav',
+      'skip-zap.wav', 'sweeps.wav', 'wind_down.wav', 'zap.wav', 'zap2.wav', 'zap_small.wav', 'zoink.wav'
+    ];
+
+    // Load SFX in parallel batches of 5 to avoid overwhelming the browser
+    const batchSize = 5;
+    for (let i = 0; i < sfxFiles.length; i += batchSize) {
+      const batch = sfxFiles.slice(i, i + batchSize);
+      await Promise.all(batch.map(async (file) => {
+        try {
+          const baseName = file.replace('.wav', '').replace('.ogg', '').replace(/\./g, '_');
+          const buffer = await this.loadSoundFile(`/sounds/sfx/${file}`);
+          this.buffers.set(`sfx_${baseName}`, buffer);
+          this.buffers.set(baseName, buffer);
+        } catch (error) {
+          console.warn(`[AudioManager] Failed to load sfx/${file}:`, error);
+        }
+      }));
+    }
+    console.log('[AudioManager] SFX loaded');
+
+    // Create aliases for old sound names (after SFX are loaded)
+    this.setupAliases();
+
+    // Load voice files in background (lowest priority)
     const voiceFiles = [
       'circuit_saturated.wav', 'core_exposed.wav', 'data_breach_imminent.wav',
       'firewall_crumbling.wav', 'grid_capacity_exceeded.wav', 'no_more_nodes.wav',
@@ -104,7 +110,8 @@ export class AudioManager {
       'tower_online.wav', 'vector_cleared.wav', 'wave_complete.wav'
     ];
 
-    for (const file of voiceFiles) {
+    // Don't await voice loading - let it happen in background
+    voiceFiles.forEach(async (file) => {
       try {
         const baseName = file.replace('.wav', '').replace('.ogg', '').replace(/\./g, '_');
         const buffer = await this.loadSoundFile(`/sounds/voice/${file}`);
@@ -112,10 +119,8 @@ export class AudioManager {
       } catch (error) {
         console.warn(`[AudioManager] Failed to load voice/${file}:`, error);
       }
-    }
-
-    // Create aliases for old sound names
-    this.setupAliases();
+    });
+    console.log('[AudioManager] Voice loading in background');
   }
 
   /**
@@ -224,7 +229,7 @@ export class AudioManager {
     // Get current track from playlist
     const trackName = this.musicPlaylist[this.currentMusicIndex];
     const musicBuffer = this.buffers.get(trackName);
-    
+
     if (!musicBuffer) {
       console.warn(`[AudioManager] Music track ${trackName} not loaded`);
       return;
@@ -236,11 +241,10 @@ export class AudioManager {
 
     // When track ends, play next track
     this.musicSource.onended = () => {
+      // Advance to next track
       this.currentMusicIndex = (this.currentMusicIndex + 1) % this.musicPlaylist.length;
-      // Only auto-play next track if music is still supposed to be playing
-      if (this.musicSource === null && !this.isMuted) {
-        this._startMusic();
-      }
+      // Start next track (don't check musicSource since we just set it)
+      setTimeout(() => this._startMusic(), 100);
     };
 
     const gainNode = this.gainNodes.get('music');
@@ -249,7 +253,7 @@ export class AudioManager {
     }
 
     this.musicSource.start(0);
-    console.log(`[AudioManager] Playing music: ${trackName}`);
+    console.log(`[AudioManager] Playing music: ${trackName} (${this.currentMusicIndex + 1}/${this.musicPlaylist.length})`);
   }
 
   /**
@@ -262,10 +266,9 @@ export class AudioManager {
     if (this.audioContext && this.audioContext.state === 'suspended') {
       await this.audioContext.resume();
       console.log('[AudioManager] Audio enabled via user interaction');
-      // Start music now that audio is enabled
-      this._startMusic();
-    } else if (this.audioContext && this.audioContext.state === 'running' && !this.musicSource) {
-      // Audio already enabled but music hasn't started
+    }
+    // Always start music when this is called (first interaction)
+    if (!this.musicSource) {
       this._startMusic();
     }
   }

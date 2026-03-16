@@ -112,10 +112,8 @@ export class GameEngine {
     this.lastTime = performance.now();
     this.loop(this.lastTime);
 
-    // Start background music (will be blocked by browser until user interaction)
-    setTimeout(() => {
-      audioManager.playMusic();
-    }, 500);
+    // Don't start music here - App.tsx handles it on first user interaction
+    // This prevents browser autoplay policy from blocking audio
   }
 
   resize() {
@@ -223,44 +221,16 @@ export class GameEngine {
         if (skill.id === 'skl_2') { // Grid Overload
           const duration = skill.duration || 10.0;
           const damage = skill.damage || 60;
-          
-          // Determine path direction at placement
-          let horizontal = true;
-          let direction = 1; // Default: horizontal right
-          
-          for (let i = 0; i < this.level.path.length - 1; i++) {
-            const p1 = this.level.path[i];
-            const p2 = this.level.path[i + 1];
-            
-            // Check horizontal segment
-            if (p1.y === p2.y && gridY === p1.y) {
-              if (gridX >= Math.min(p1.x, p2.x) && gridX <= Math.max(p1.x, p2.x)) {
-                horizontal = true;
-                direction = p2.x > p1.x ? 1 : -1;
-                break;
-              }
-            }
-            
-            // Check vertical segment
-            if (p1.x === p2.x && gridX === p1.x) {
-              if (gridY >= Math.min(p1.y, p2.y) && gridY <= Math.max(p1.y, p2.y)) {
-                horizontal = false;
-                direction = p2.y > p1.y ? 1 : -1;
-                break;
-              }
-            }
-          }
-          
+
           this.gridZones.push(new GridZone(
             gridX,
             gridY,
             duration,
             damage,
             skill.color,
-            horizontal,
-            direction
+            this.level.path
           ));
-          
+
           // Create spawn effect - digital grid burst (square particles)
           for(let i = 0; i < 15; i++) {
             const offsetX = (Math.random() - 0.5) * 0.8;
@@ -725,10 +695,11 @@ export class GameEngine {
 
         // Spawn explosion particles for non-beam projectiles
         if (!p.isBeam) {
-          // Spawn particles - sparks for impacts
+          // Spawn particles - circles for acid/corrosion effects, sparks for everything else
           const particleColor = p.special === 'corrosion_debuff' ? '#22c55e' : p.color;
+          const particleShape = p.special === 'corrosion_debuff' ? 'circle' : 'spark';
           for(let j=0; j<5; j++) {
-            this.particles.push(new Particle(p.x, p.y, particleColor, 'spark'));
+            this.particles.push(new Particle(p.x, p.y, particleColor, particleShape));
           }
         }
       }
@@ -1692,20 +1663,45 @@ export class GameEngine {
         }
       }
 
-      // Corrosion visual effect (pulsing green glow)
-      if (e.hasCorrosion) {
+      // Corrosion visual effect (amorphous green blob)
+      if (e.hasCorrosion && e.corrosionOffsets.length > 0) {
         // Pulse: 0 to 1 over 0.4s, using sine wave for smooth pulse
         const pulse = (Math.sin(e.corrosionPulse * Math.PI * 5) + 1) / 2; // 0.4s period
-        const alpha = 0.2 + pulse * 0.2; // Pulse between 0.2 and 0.4
+        const alpha = 0.25 + pulse * 0.25; // Pulse between 0.25 and 0.5
 
-        ctx.shadowBlur = 25;
+        ctx.shadowBlur = 20;
         ctx.shadowColor = '#22c55e'; // green-500
-        ctx.strokeStyle = '#22c55e';
-        ctx.lineWidth = 3;
-        ctx.globalAlpha = alpha;
+        ctx.fillStyle = '#22c55e';
+        ctx.globalAlpha = alpha * 0.5; // Semi-transparent fill
+        
+        // Draw amorphous blob shape
+        const baseRadius = r * 1.15 * pulse;
         ctx.beginPath();
-        ctx.arc(px, py, r * 1.2, 0, Math.PI * 2);
+        for (let i = 0; i <= 16; i++) {
+          const angle = (Math.PI * 2 * i) / 16;
+          // Interpolate between offsets for smoother shape
+          const offsetIdx = (i / 2) % 8;
+          const t = offsetIdx % 1;
+          const idx1 = Math.floor(offsetIdx);
+          const idx2 = (idx1 + 1) % 8;
+          const offset = e.corrosionOffsets[idx1] * (1 - t) + e.corrosionOffsets[idx2] * t;
+          
+          const blobRadius = baseRadius * offset;
+          const x = px + Math.cos(angle) * blobRadius;
+          const y = py + Math.sin(angle) * blobRadius;
+          
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        
+        // Draw border
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = '#22c55e';
+        ctx.lineWidth = 2;
         ctx.stroke();
+        
         ctx.globalAlpha = 1.0;
         ctx.shadowBlur = 0;
       }
