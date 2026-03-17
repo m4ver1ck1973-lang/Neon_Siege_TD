@@ -89,7 +89,7 @@ export const ENEMIES: EnemyFaction[] = [
     subtypes: [
       { id: "scr_1", name: "Courier", health: 40, speed: 4.5, bounty: 10, logic_tag: "ignore_slow_10", color: "#f43f5e", radius: 0.3 }, // rose-500
       { id: "scr_2", name: "Data-Thief", health: 65, speed: 3.8, bounty: 25, logic_tag: "stealth_active_2s", color: "#be123c", radius: 0.25 }, // rose-700
-      { id: "scr_3", name: "Extraction Specialist", health: 120, speed: 3.2, bounty: 40, logic_tag: "smoke_on_hit", color: "#881337", radius: 0.3 } // rose-900
+      { id: "scr_3", name: "Extraction Specialist", health: 150, speed: 3.2, bounty: 40, logic_tag: "smoke_on_hit", color: "#881337", radius: 0.3 } // rose-900
     ]
   },
   {
@@ -103,7 +103,7 @@ export const ENEMIES: EnemyFaction[] = [
   {
     category: "Bio-Hacked",
     subtypes: [
-      { id: "bio_1", name: "Cyber-Rat", health: 35, speed: 3.5, bounty: 5, logic_tag: "swarm_spawn_chance_85", color: "#84cc16", radius: 0.2 }, // lime-500
+      { id: "bio_1", name: "Cyber-Rat", health: 80, speed: 3.5, bounty: 20, logic_tag: "split_on_hit_80", color: "#84cc16", radius: 0.2 }, // lime-500
       { id: "bio_2", name: "Leaper", health: 80, speed: 3.5, bounty: 30, logic_tag: "path_jump", color: "#4d7c0f", radius: 0.3 }, // lime-700
       { id: "bio_3", name: "Chem-Hulk", health: 350, speed: 1.5, bounty: 60, logic_tag: "death_puddle_slow", color: "#365314", radius: 0.5 } // lime-900
     ]
@@ -248,89 +248,372 @@ const MAPS = [
   }
 ];
 
-const BASE_WAVES = [
-  { count: 10, interval: 2.0, enemyId: "scr_1" }, // Wave 1: Intro
-  { count: 15, interval: 1.5, enemyId: "scr_1" }, // Wave 2
-  { count: 20, interval: 1.2, enemyId: "scr_1" }, // Wave 3
-  { count: 5, interval: 2.5, enemyId: "scr_2" },  // Wave 4: Stealth intro
-  { count: 1, interval: 5.0, enemyId: "scr_3" },  // Wave 5: Mini-Boss (Specialist)
-  { count: 8, interval: 3.0, enemyId: "hvy_1" },  // Wave 6: Tank intro
-  { count: 12, interval: 2.5, enemyId: "hvy_1" }, // Wave 7
-  { count: 5, interval: 2.5, enemyId: "hvy_2" },  // Wave 8: Bulldozer
-  { count: 8, interval: 1.2, enemyId: "bio_1" }, // Wave 9: Swarm (nerfed: was 30@0.5s)
-  { count: 1, interval: 10.0, enemyId: "boss_1" }, // Wave 10: BOSS 1 (CEO)
-  { count: 15, interval: 1.0, enemyId: "bio_1" }, // Wave 11: Bio swarms
-  { count: 10, interval: 1.5, enemyId: "bio_1" }, // Wave 12 (Mixed in future logic)
-  { count: 8, interval: 2.0, enemyId: "bio_2" },  // Wave 13: Leapers
-  { count: 6, interval: 2.5, enemyId: "bio_3" },  // Wave 14: Chem Hulks
-  { count: 1, interval: 10.0, enemyId: "boss_2" }, // Wave 15: BOSS 2 (Hive Mind)
-  { count: 15, interval: 1.2, enemyId: "glitch_1" }, // Wave 16: Evasion
-  { count: 20, interval: 1.0, enemyId: "glitch_1" }, // Wave 17
-  { count: 10, interval: 2.0, enemyId: "glitch_2" }, // Wave 18: Teleporters
-  { count: 5, interval: 3.0, enemyId: "glitch_3" },  // Wave 19: Healers
-  { count: 1, interval: 10.0, enemyId: "boss_3" }    // Wave 20: BOSS 3 (Zero Day)
+// ============================================================================
+// SECTOR-BASED WAVE PROGRESSION
+// 4 Sectors × 5 Nodes = 20 Levels
+// Each Sector culminates in a Boss wave
+// ============================================================================
+
+interface SectorConfig {
+  name: string;
+  theme: string;
+  levels: LevelWaveConfig[];
+}
+
+interface LevelWaveConfig {
+  waves: { count: number; interval: number; enemyId: string }[];
+  startingCredits: number;
+}
+
+const SECTORS: SectorConfig[] = [
+  // ==========================================================================
+  // SECTOR 1: CORPORATE INCURSION (Levels 1-5)
+  // Theme: Corporate Scripters
+  // Boss: CEO Executive Mech
+  // ==========================================================================
+  {
+    name: "Corporate Incursion",
+    theme: "Corporate Scripters",
+    levels: [
+      // Level 1: Node 1 (6 waves) - Intro to Corporate
+      {
+        waves: [
+          { count: 8, interval: 2.0, enemyId: "scr_1" },   // Courier
+          { count: 10, interval: 1.8, enemyId: "scr_1" },
+          { count: 12, interval: 1.5, enemyId: "scr_1" },
+          { count: 5, interval: 2.5, enemyId: "scr_2" },   // Data-Thief
+          { count: 8, interval: 2.2, enemyId: "scr_2" },
+          { count: 1, interval: 5.0, enemyId: "scr_3" },   // Extraction Specialist (mini-boss)
+        ],
+        startingCredits: 850
+      },
+      // Level 2: Node 2 (7 waves)
+      {
+        waves: [
+          { count: 10, interval: 1.8, enemyId: "scr_1" },
+          { count: 12, interval: 1.5, enemyId: "scr_1" },
+          { count: 15, interval: 1.3, enemyId: "scr_1" },
+          { count: 6, interval: 2.5, enemyId: "scr_2" },
+          { count: 8, interval: 2.2, enemyId: "scr_2" },
+          { count: 3, interval: 3.0, enemyId: "scr_3" },
+          { count: 1, interval: 5.0, enemyId: "scr_3" },   // Mini-boss
+        ],
+        startingCredits: 800
+      },
+      // Level 3: Node 3 (8 waves)
+      {
+        waves: [
+          { count: 10, interval: 1.8, enemyId: "scr_1" },
+          { count: 12, interval: 1.5, enemyId: "scr_1" },
+          { count: 8, interval: 2.2, enemyId: "scr_2" },
+          { count: 10, interval: 2.0, enemyId: "scr_2" },
+          { count: 5, interval: 2.8, enemyId: "scr_3" },
+          { count: 8, interval: 2.0, enemyId: "scr_1" },   // Mixed
+          { count: 3, interval: 3.0, enemyId: "scr_3" },
+          { count: 1, interval: 5.0, enemyId: "scr_3" },   // Mini-boss
+        ],
+        startingCredits: 800
+      },
+      // Level 4: Node 4 (9 waves)
+      {
+        waves: [
+          { count: 12, interval: 1.6, enemyId: "scr_1" },
+          { count: 15, interval: 1.4, enemyId: "scr_1" },
+          { count: 10, interval: 2.0, enemyId: "scr_2" },
+          { count: 12, interval: 1.8, enemyId: "scr_2" },
+          { count: 6, interval: 2.8, enemyId: "scr_3" },
+          { count: 8, interval: 2.5, enemyId: "scr_3" },
+          { count: 10, interval: 1.8, enemyId: "scr_1" },  // Mixed elite
+          { count: 5, interval: 2.5, enemyId: "scr_2" },
+          { count: 1, interval: 8.0, enemyId: "boss_1" },  // CEO (SECTOR BOSS)
+        ],
+        startingCredits: 750
+      },
+      // Level 5: Node 5 (10 waves) - Sector 1 Finale
+      {
+        waves: [
+          { count: 10, interval: 1.8, enemyId: "scr_1" },
+          { count: 12, interval: 1.5, enemyId: "scr_1" },
+          { count: 15, interval: 1.3, enemyId: "scr_1" },
+          { count: 8, interval: 2.2, enemyId: "scr_2" },
+          { count: 10, interval: 2.0, enemyId: "scr_2" },
+          { count: 12, interval: 1.8, enemyId: "scr_2" },
+          { count: 6, interval: 2.8, enemyId: "scr_3" },
+          { count: 8, interval: 2.5, enemyId: "scr_3" },
+          { count: 3, interval: 4.0, enemyId: "scr_3" },  // Elite gauntlet
+          { count: 1, interval: 10.0, enemyId: "boss_1" }, // CEO (SECTOR BOSS)
+        ],
+        startingCredits: 750
+      }
+    ]
+  },
+
+  // ==========================================================================
+  // SECTOR 2: HEAVY BIO-ASSAULT (Levels 6-10)
+  // Theme: Heavy Construction + Bio-Hacked
+  // Boss: Hive-Mind Swarm
+  // ==========================================================================
+  {
+    name: "Heavy Bio-Assault",
+    theme: "Heavy Construction + Bio-Hacked",
+    levels: [
+      // Level 6: Node 1 (6 waves) - Intro to Heavy/Bio
+      {
+        waves: [
+          { count: 5, interval: 3.0, enemyId: "hvy_1" },   // Lifter-Bot
+          { count: 6, interval: 2.8, enemyId: "hvy_1" },
+          { count: 8, interval: 2.5, enemyId: "hvy_1" },
+          { count: 8, interval: 1.5, enemyId: "bio_1" },   // Cyber-Rat
+          { count: 10, interval: 1.3, enemyId: "bio_1" },
+          { count: 1, interval: 5.0, enemyId: "bio_3" },   // Chem-Hulk (mini-boss)
+        ],
+        startingCredits: 850
+      },
+      // Level 7: Node 2 (7 waves)
+      {
+        waves: [
+          { count: 6, interval: 2.8, enemyId: "hvy_1" },
+          { count: 8, interval: 2.5, enemyId: "hvy_1" },
+          { count: 10, interval: 1.5, enemyId: "bio_1" },
+          { count: 12, interval: 1.3, enemyId: "bio_1" },
+          { count: 5, interval: 2.5, enemyId: "bio_2" },   // Leaper
+          { count: 3, interval: 3.0, enemyId: "bio_3" },
+          { count: 1, interval: 5.0, enemyId: "bio_3" },   // Mini-boss
+        ],
+        startingCredits: 800
+      },
+      // Level 8: Node 3 (8 waves)
+      {
+        waves: [
+          { count: 6, interval: 2.8, enemyId: "hvy_1" },
+          { count: 8, interval: 2.5, enemyId: "hvy_1" },
+          { count: 5, interval: 2.5, enemyId: "hvy_2" },   // Bulldozer
+          { count: 10, interval: 1.5, enemyId: "bio_1" },
+          { count: 12, interval: 1.3, enemyId: "bio_1" },
+          { count: 6, interval: 2.5, enemyId: "bio_2" },
+          { count: 4, interval: 3.0, enemyId: "bio_3" },
+          { count: 1, interval: 5.0, enemyId: "bio_3" },   // Mini-boss
+        ],
+        startingCredits: 800
+      },
+      // Level 9: Node 4 (9 waves)
+      {
+        waves: [
+          { count: 8, interval: 2.5, enemyId: "hvy_1" },
+          { count: 6, interval: 2.8, enemyId: "hvy_2" },
+          { count: 4, interval: 3.5, enemyId: "hvy_3" },   // Wrecking Ball
+          { count: 12, interval: 1.4, enemyId: "bio_1" },
+          { count: 8, interval: 2.2, enemyId: "bio_2" },
+          { count: 5, interval: 2.8, enemyId: "bio_3" },
+          { count: 8, interval: 2.0, enemyId: "hvy_1" },   // Mixed elite
+          { count: 5, interval: 2.5, enemyId: "bio_2" },
+          { count: 1, interval: 8.0, enemyId: "boss_2" },  // Hive-Mind (SECTOR BOSS)
+        ],
+        startingCredits: 750
+      },
+      // Level 10: Node 5 (10 waves) - Sector 2 Finale
+      {
+        waves: [
+          { count: 8, interval: 2.5, enemyId: "hvy_1" },
+          { count: 10, interval: 2.3, enemyId: "hvy_1" },
+          { count: 6, interval: 3.0, enemyId: "hvy_2" },
+          { count: 4, interval: 3.5, enemyId: "hvy_3" },
+          { count: 15, interval: 1.3, enemyId: "bio_1" },
+          { count: 10, interval: 2.0, enemyId: "bio_1" },
+          { count: 8, interval: 2.2, enemyId: "bio_2" },
+          { count: 6, interval: 2.8, enemyId: "bio_3" },
+          { count: 3, interval: 4.0, enemyId: "bio_3" },  // Elite gauntlet
+          { count: 1, interval: 10.0, enemyId: "boss_2" }, // Hive-Mind (SECTOR BOSS)
+        ],
+        startingCredits: 750
+      }
+    ]
+  },
+
+  // ==========================================================================
+  // SECTOR 3: DIGITAL ANOMALY (Levels 11-15)
+  // Theme: Digital Anomalies
+  // Boss: Project Zero-Day
+  // ==========================================================================
+  {
+    name: "Digital Anomaly",
+    theme: "Digital Anomalies",
+    levels: [
+      // Level 11: Node 1 (6 waves) - Intro to Digital
+      {
+        waves: [
+          { count: 8, interval: 2.0, enemyId: "glitch_1" }, // Static-Wisp
+          { count: 10, interval: 1.8, enemyId: "glitch_1" },
+          { count: 12, interval: 1.5, enemyId: "glitch_1" },
+          { count: 5, interval: 2.5, enemyId: "glitch_2" }, // Blink-Frame
+          { count: 8, interval: 2.2, enemyId: "glitch_2" },
+          { count: 1, interval: 5.0, enemyId: "glitch_3" }, // Buffer-Ghost (mini-boss)
+        ],
+        startingCredits: 850
+      },
+      // Level 12: Node 2 (7 waves)
+      {
+        waves: [
+          { count: 10, interval: 1.8, enemyId: "glitch_1" },
+          { count: 12, interval: 1.5, enemyId: "glitch_1" },
+          { count: 15, interval: 1.3, enemyId: "glitch_1" },
+          { count: 6, interval: 2.5, enemyId: "glitch_2" },
+          { count: 8, interval: 2.2, enemyId: "glitch_2" },
+          { count: 3, interval: 3.0, enemyId: "glitch_3" },
+          { count: 1, interval: 5.0, enemyId: "glitch_3" },  // Mini-boss
+        ],
+        startingCredits: 800
+      },
+      // Level 13: Node 3 (8 waves)
+      {
+        waves: [
+          { count: 10, interval: 1.8, enemyId: "glitch_1" },
+          { count: 12, interval: 1.5, enemyId: "glitch_1" },
+          { count: 8, interval: 2.2, enemyId: "glitch_2" },
+          { count: 10, interval: 2.0, enemyId: "glitch_2" },
+          { count: 5, interval: 2.8, enemyId: "glitch_3" },
+          { count: 8, interval: 2.0, enemyId: "bio_1" },    // Bio support
+          { count: 3, interval: 3.0, enemyId: "glitch_3" },
+          { count: 1, interval: 5.0, enemyId: "glitch_3" },  // Mini-boss
+        ],
+        startingCredits: 800
+      },
+      // Level 14: Node 4 (9 waves)
+      {
+        waves: [
+          { count: 12, interval: 1.6, enemyId: "glitch_1" },
+          { count: 15, interval: 1.4, enemyId: "glitch_1" },
+          { count: 10, interval: 2.0, enemyId: "glitch_2" },
+          { count: 12, interval: 1.8, enemyId: "glitch_2" },
+          { count: 6, interval: 2.8, enemyId: "glitch_3" },
+          { count: 8, interval: 2.5, enemyId: "glitch_3" },
+          { count: 10, interval: 1.8, enemyId: "bio_1" },   // Mixed elite
+          { count: 5, interval: 2.5, enemyId: "bio_2" },
+          { count: 1, interval: 8.0, enemyId: "boss_3" },   // Zero-Day (SECTOR BOSS)
+        ],
+        startingCredits: 750
+      },
+      // Level 15: Node 5 (10 waves) - Sector 3 Finale
+      {
+        waves: [
+          { count: 10, interval: 1.8, enemyId: "glitch_1" },
+          { count: 12, interval: 1.5, enemyId: "glitch_1" },
+          { count: 15, interval: 1.3, enemyId: "glitch_1" },
+          { count: 8, interval: 2.2, enemyId: "glitch_2" },
+          { count: 10, interval: 2.0, enemyId: "glitch_2" },
+          { count: 12, interval: 1.8, enemyId: "glitch_2" },
+          { count: 6, interval: 2.8, enemyId: "glitch_3" },
+          { count: 8, interval: 2.5, enemyId: "glitch_3" },
+          { count: 3, interval: 4.0, enemyId: "glitch_3" }, // Elite gauntlet
+          { count: 1, interval: 10.0, enemyId: "boss_3" },  // Zero-Day (SECTOR BOSS)
+        ],
+        startingCredits: 750
+      }
+    ]
+  },
+
+  // ==========================================================================
+  // SECTOR 4: CORPORATE OVERLORD (Levels 16-20)
+  // Theme: All Factions - Elite Mix
+  // Boss: The Corporate Overlord
+  // ==========================================================================
+  {
+    name: "Corporate Overlord",
+    theme: "All Factions - Elite Mix",
+    levels: [
+      // Level 16: Node 1 (6 waves) - Intro to Elite Mix
+      {
+        waves: [
+          { count: 8, interval: 2.0, enemyId: "scr_2" },   // Corporate
+          { count: 6, interval: 2.8, enemyId: "hvy_2" },   // Heavy
+          { count: 10, interval: 1.5, enemyId: "bio_1" },  // Bio
+          { count: 8, interval: 2.0, enemyId: "glitch_1" }, // Digital
+          { count: 5, interval: 2.5, enemyId: "scr_3" },   // Elite Corporate
+          { count: 1, interval: 8.0, enemyId: "boss_4" },  // Overlord (SECTOR BOSS)
+        ],
+        startingCredits: 900
+      },
+      // Level 17: Node 2 (7 waves)
+      {
+        waves: [
+          { count: 10, interval: 1.8, enemyId: "scr_2" },
+          { count: 8, interval: 2.5, enemyId: "hvy_2" },
+          { count: 12, interval: 1.4, enemyId: "bio_1" },
+          { count: 10, interval: 1.8, enemyId: "glitch_1" },
+          { count: 6, interval: 2.5, enemyId: "scr_3" },
+          { count: 4, interval: 3.0, enemyId: "bio_3" },
+          { count: 1, interval: 8.0, enemyId: "boss_4" },  // Overlord (SECTOR BOSS)
+        ],
+        startingCredits: 850
+      },
+      // Level 18: Node 3 (8 waves)
+      {
+        waves: [
+          { count: 10, interval: 1.8, enemyId: "scr_2" },
+          { count: 8, interval: 2.5, enemyId: "hvy_2" },
+          { count: 5, interval: 3.0, enemyId: "hvy_3" },
+          { count: 12, interval: 1.4, enemyId: "bio_1" },
+          { count: 8, interval: 2.0, enemyId: "bio_2" },
+          { count: 10, interval: 1.8, enemyId: "glitch_2" },
+          { count: 5, interval: 2.5, enemyId: "glitch_3" },
+          { count: 1, interval: 8.0, enemyId: "boss_4" },  // Overlord (SECTOR BOSS)
+        ],
+        startingCredits: 850
+      },
+      // Level 19: Node 4 (9 waves)
+      {
+        waves: [
+          { count: 12, interval: 1.6, enemyId: "scr_2" },
+          { count: 8, interval: 2.5, enemyId: "hvy_2" },
+          { count: 6, interval: 3.0, enemyId: "hvy_3" },
+          { count: 15, interval: 1.3, enemyId: "bio_1" },
+          { count: 10, interval: 2.0, enemyId: "bio_2" },
+          { count: 12, interval: 1.8, enemyId: "glitch_1" },
+          { count: 8, interval: 2.2, enemyId: "glitch_2" },
+          { count: 5, interval: 2.8, enemyId: "scr_3" },   // Elite gauntlet
+          { count: 1, interval: 8.0, enemyId: "boss_4" },  // Overlord (SECTOR BOSS)
+        ],
+        startingCredits: 800
+      },
+      // Level 20: Node 5 (10 waves) - FINAL BOSS
+      {
+        waves: [
+          { count: 10, interval: 1.8, enemyId: "scr_2" },
+          { count: 12, interval: 1.6, enemyId: "scr_2" },
+          { count: 8, interval: 2.5, enemyId: "hvy_2" },
+          { count: 6, interval: 3.0, enemyId: "hvy_3" },
+          { count: 15, interval: 1.3, enemyId: "bio_1" },
+          { count: 10, interval: 2.0, enemyId: "bio_2" },
+          { count: 12, interval: 1.8, enemyId: "glitch_1" },
+          { count: 8, interval: 2.2, enemyId: "glitch_2" },
+          { count: 3, interval: 4.0, enemyId: "boss_3" },  // Ultimate gauntlet
+          { count: 1, interval: 12.0, enemyId: "boss_4" }, // OVERLORD (FINAL BOSS)
+        ],
+        startingCredits: 800
+      }
+    ]
+  }
 ];
 
 export const LEVELS: LevelConfig[] = [];
 
-// Boss/elite enemies for final waves
-const FINAL_WAVE_ENEMIES = [
-  { minWaves: 6, enemyId: "scr_3" },      // 6+ waves: Extraction Specialist (mini-boss)
-  { minWaves: 8, enemyId: "hvy_2" },      // 8+ waves: Bulldozer
-  { minWaves: 10, enemyId: "boss_1" },    // 10+ waves: CEO Executive Mech
-  { minWaves: 12, enemyId: "boss_2" },    // 12+ waves: Hive-Mind Swarm
-  { minWaves: 14, enemyId: "boss_3" },    // 14+ waves: Project Zero-Day
-];
-
 let levelIdCounter = 1;
-for (let mapIndex = 0; mapIndex < MAPS.length; mapIndex++) {
-  const map = MAPS[mapIndex];
-  // 2 difficulties per map: Level 1-2 for maps 1-4, Level 1-2 for maps 5-10
-  // This creates exactly 20 levels total (10 maps × 2 difficulties)
-  for (let difficulty = 1; difficulty <= 2; difficulty++) {
-    const waves: WaveConfig[] = [];
-    // Map to appropriate wave progression based on level number
-    // Levels 1-8: waves 1-16, Levels 9-20: waves 9-20
-    const waveOffset = mapIndex * 2; // Each map covers 2 levels worth of waves
-    const numWaves = 6 + difficulty * 2; // 8 waves for diff 1, 10 waves for diff 2
-
-    for (let w = 0; w < numWaves; w++) {
-      let waveIndex = waveOffset + w;
-      // Wrap around if we exceed BASE_WAVES length
-      let baseWave = BASE_WAVES[waveIndex % BASE_WAVES.length];
-
-      // Final wave should always be a boss/elite appropriate to level length
-      const isFinalWave = (w === numWaves - 1);
-      if (isFinalWave) {
-        // Find appropriate boss for this level length (highest tier that qualifies)
-        let bossEnemyId = "scr_3"; // Default mini-boss
-        for (const boss of FINAL_WAVE_ENEMIES) {
-          if (numWaves >= boss.minWaves) {
-            bossEnemyId = boss.enemyId;
-          }
-        }
-        // Single elite/boss with longer spawn interval
-        baseWave = { count: 1, interval: 8.0, enemyId: bossEnemyId };
-      }
-
-      waves.push({
-        wave: w + 1,
-        count: Math.floor(baseWave.count * (1 + difficulty * 0.3 + w * 0.1)),
-        interval: Math.max(0.3, baseWave.interval * Math.pow(0.92, difficulty)),
-        enemyId: baseWave.enemyId
-      });
-    }
+for (let sectorIndex = 0; sectorIndex < SECTORS.length; sectorIndex++) {
+  const sector = SECTORS[sectorIndex];
+  for (let nodeIndex = 0; nodeIndex < sector.levels.length; nodeIndex++) {
+    const levelConfig = sector.levels[nodeIndex];
+    const map = MAPS[Math.floor(levelIdCounter / 2) % MAPS.length]; // Distribute across maps
 
     LEVELS.push({
       id: `level_${levelIdCounter}`,
-      name: `${map.name} ${difficulty === 1 ? 'I' : 'II'}`,
-      description: `${map.desc} Difficulty: ${difficulty}/2.`,
-      startingCredits: 900 - (difficulty * 100),
+      name: `${sector.name} - Node ${nodeIndex + 1}`,
+      description: `${sector.theme}. Wave ${levelConfig.waves.length}.`,
+      startingCredits: levelConfig.startingCredits,
       startingHealth: 100,
       gridWidth: map.gridWidth,
       gridHeight: map.gridHeight,
       path: map.path,
-      waves: waves
+      waves: levelConfig.waves
     });
     levelIdCounter++;
   }

@@ -592,16 +592,39 @@ export class GameEngine {
 
         if (damageResult.damaged) {
           this.effectManager.applySpecial(hitTarget, p.special, p.sourceId, p.damage);
-          
-          // Split on Damage Logic - spawn a clone
+
+          // Split on Hit Logic - spawn a clone and stun original for 0.5s
           if (damageResult.splitSpawn && damageResult.splitSpawn.length > 0) {
-            // Create a split clone with partial HP
-            const clone = new Enemy(hitTarget.path, hitTarget.subtype, 0.5); // 50% of wave multiplier
-            clone.x = hitTarget.x + (Math.random() - 0.5) * 0.5;
-            clone.y = hitTarget.y + (Math.random() - 0.5) * 0.5;
-            clone.pathIndex = hitTarget.pathIndex;
-            clone.hasSplit = true; // Don't split again
+            // Create a split clone with post-damage health level
+            const cloneData = damageResult.splitSpawn[0] as any;
+            const clone = new Enemy(hitTarget.path, hitTarget.subtype, 1.0);
+            clone.x = hitTarget.x + (Math.random() - 0.5) * 0.4;
+            clone.y = hitTarget.y + (Math.random() - 0.5) * 0.4;
+            clone.pathIndex = Math.min(cloneData.pathIndex, hitTarget.path.length - 2);
+            clone.health = cloneData.health; // Match post-damage health
+            clone.maxHealth = cloneData.maxHealth;
+            clone.splitStunImmunity = 2.0; // Prevent clone from immediately splitting again
+            clone.isMinion = true; // Mark as minion (for potential future logic)
+            clone.customColor = '#65a30d'; // Darker lime for clones (lime-700 vs parent's lime-500)
+            // Store desired speed in a custom property
+            (clone as any).minionSpeedMult = 4.0 / 3.5;
             this.enemies.push(clone);
+
+            // Stun the original rat for 0.5 seconds to allow visual separation
+            hitTarget.addEffect({
+              id: crypto.randomUUID(),
+              sourceId: 'split_on_hit',
+              type: 'stun',
+              value: 1,
+              duration: 0.5
+            });
+            hitTarget.splitStunImmunity = 2.0; // Prevent immediate re-split after stun
+
+            // Spawn visual effect - small green burst
+            for (let j = 0; j < 8; j++) {
+              this.particles.push(new Particle(hitTarget.x, hitTarget.y, '#84cc16', 'spark'));
+            }
+            audioManager.play('skill_emp');
           }
         }
 
@@ -872,17 +895,59 @@ export class GameEngine {
         }
       }
 
-      // Path Jump Logic - jump ahead periodically
+      // Path Jump Logic - jump ahead after traveling certain distance
       if (e.pathJumpDistance > 0 && e.health > 0) {
-        e.pathJumpTimer -= dt;
-        if (e.pathJumpTimer <= 0) {
-          e.pathJumpTimer = 8.0; // Jump every 8 seconds
-          const jumpAhead = Math.min(e.pathJumpDistance, e.path.length - 1 - e.pathIndex);
-          if (jumpAhead > 0) {
-            e.pathIndex += jumpAhead;
-            const newWaypoint = e.path[e.pathIndex];
-            e.x = newWaypoint.x;
-            e.y = newWaypoint.y;
+        // Handle initial delay before first jump can occur
+        if (e.pathJumpInitialDelay > 0) {
+          e.pathJumpInitialDelay -= dt;
+        } else {
+          // Track cells traveled along the path
+          const target = e.path[e.pathIndex + 1];
+          if (target) {
+            const distToTarget = distance(e, target);
+            const cellsThisFrame = e.subtype.speed * e.speedMultiplier * dt;
+            e.cellsTraveled += cellsThisFrame;
+
+            // Jump when we've traveled enough cells
+            if (e.cellsTraveled >= e.pathJumpDistance) {
+              // Calculate how far along current segment we are (as cell fraction)
+              const cellsRemaining = e.cellsTraveled - e.pathJumpDistance;
+              
+              // Jump ahead by calculating new position along path
+              let cellsToJump = e.pathJumpDistance;
+              let remainingPathIndex = e.pathIndex;
+              
+              // Walk forward along path, accumulating cell distances
+              while (cellsToJump > 0 && remainingPathIndex < e.path.length - 1) {
+                const currentWaypoint = e.path[remainingPathIndex];
+                const nextWaypoint = e.path[remainingPathIndex + 1];
+                const segmentDist = distance(currentWaypoint, nextWaypoint);
+                
+                if (cellsToJump >= segmentDist) {
+                  cellsToJump -= segmentDist;
+                  remainingPathIndex++;
+                } else {
+                  // Partial segment - calculate exact position
+                  const fraction = cellsToJump / segmentDist;
+                  e.x = currentWaypoint.x + (nextWaypoint.x - currentWaypoint.x) * fraction;
+                  e.y = currentWaypoint.y + (nextWaypoint.y - currentWaypoint.y) * fraction;
+                  e.pathIndex = remainingPathIndex;
+                  break;
+                }
+              }
+              
+              // If we reached the end of the path, just move to the end
+              if (remainingPathIndex >= e.path.length - 1) {
+                const end = e.path[e.path.length - 1];
+                e.x = end.x;
+                e.y = end.y;
+                e.pathIndex = e.path.length - 2;
+              }
+              
+              // Reset counter and set cooldown for next jump
+              e.cellsTraveled = 0;
+              e.pathJumpTimer = 8.0; // 8 second cooldown between jumps
+            }
           }
         }
       }
@@ -916,29 +981,6 @@ export class GameEngine {
       }
 
       if (e.health <= 0) {
-        // Swarm Spawn on Death Logic - 85% chance to spawn 1-5 minions
-        if (e.subtype.logic_tag.startsWith('swarm_spawn_chance_')) {
-          if (Math.random() < 0.85 && this.enemies.length < 100) {
-            // Spawn 1-5 minions
-            const minionCount = Math.floor(Math.random() * 5) + 1; // 1 to 5
-            const maxSpawns = Math.min(minionCount, Math.floor(100 - this.enemies.length));
-            
-            for (let s = 0; s < maxSpawns; s++) {
-              const minionSubtype = e.subtype;
-              const minion = new Enemy(e.path, minionSubtype, 0.15); // 15% HP of normal
-              // Spawn minions directly at parent's position (no offset to avoid off-path spawning)
-              minion.x = e.x;
-              minion.y = e.y;
-              // Clamp pathIndex to valid range and ensure minion can still move
-              minion.pathIndex = Math.min(e.pathIndex, e.path.length - 2);
-              minion.isMinion = true; // Mark as spawned minion for visual distinction
-              // Store desired speed in a custom property (speedMultiplier is overwritten by processEffects)
-              (minion as any).minionSpeedMult = 4.0 / 3.5;
-              this.enemies.push(minion);
-            }
-          }
-        }
-
         // Nanite Plague Spread Logic - only spread if we don't have too many enemies
         const plagueEffect = e.effects.find(eff => eff.type === 'nanite_plague');
         if (plagueEffect && this.enemies.length < 100) {
@@ -1751,15 +1793,14 @@ export class GameEngine {
     for (const e of this.enemies) {
       const px = e.x * cellSize;
       const py = e.y * cellSize;
-      
+
       // Minion visual distinctions
       let r = e.subtype.radius * cellSize;
-      let enemyColor = e.subtype.color;
+      let enemyColor = e.customColor || e.subtype.color;
       let enemyAlpha = 1.0;
-      
+
       if (e.isMinion) {
         r = e.subtype.radius * 0.75 * cellSize; // 25% smaller
-        enemyColor = '#65a30d'; // Darker green (lime-700 vs lime-500)
         enemyAlpha = 1.0; // Full opacity for visibility
       }
 
@@ -1773,14 +1814,12 @@ export class GameEngine {
         if (e.isStealth) ctx.globalAlpha = 0.25;
         this.drawEnemyShape(ctx, px, py, r, e.subtype.id, enemyColor, false, 0, e.facingAngle);
 
-        // Health bar (skip for minions)
-        if (!e.isMinion) {
-          const hpPercent = e.health / e.maxHealth;
-          ctx.fillStyle = '#ef4444';
-          ctx.fillRect(px - r, py - r - 6, r * 2, 3);
-          ctx.fillStyle = '#22c55e';
-          ctx.fillRect(px - r, py - r - 6, r * 2 * hpPercent, 3);
-        }
+        // Health bar - show for all enemies including minions
+        const hpPercent = e.health / e.maxHealth;
+        ctx.fillStyle = '#ef4444';
+        ctx.fillRect(px - r, py - r - 6, r * 2, 3);
+        ctx.fillStyle = '#22c55e';
+        ctx.fillRect(px - r, py - r - 6, r * 2 * hpPercent, 3);
       }
 
       // Stun visual effect

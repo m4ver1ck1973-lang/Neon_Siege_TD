@@ -221,10 +221,14 @@ export class Enemy implements Vector2D {
   healingAmount: number = 0; // healing_aura - HP healed per tick
   healingTimer: number = 0; // healing_aura - timer for healing ticks
   swarmSpawnCount: number = 0; // swarm_spawn_10 - spawn 10 minions on death
-  pathJumpDistance: number = 0; // path_jump - jump ahead along path
+  pathJumpDistance: number = 0; // path_jump - jump ahead along path (in cells)
   pathJumpTimer: number = 0; // path_jump - timer between jumps
+  pathJumpInitialDelay: number = 0; // path_jump - initial delay before first jump
+  cellsTraveled: number = 0; // Track cells traveled for jump trigger
   hasSplit: boolean = false; // split_on_damage - has already split
   splitHealthPercent: number = 0; // split_on_damage - HP % to split at
+  splitOnHitChance: number = 0; // split_on_hit_80 - 80% chance to split on hit
+  splitStunImmunity: number = 0; // Immunity timer after splitting to prevent stun-stun chains
   towerHijackRadius: number = 0; // tower_hijack - radius for hijacking towers
   hijackTimer: number = 0; // tower_hijack - timer between hijack attempts
   hijackedTowers: Set<string> = new Set(); // Track hijacked tower IDs
@@ -251,6 +255,7 @@ export class Enemy implements Vector2D {
   hitCount: number = 0;
   damageNumbers: DamageNumber[] = [];
   isMinion: boolean = false; // True if spawned from another enemy (visual distinction)
+  customColor: string | null = null; // Override color for visual distinction (e.g., clones)
 
   constructor(path: Vector2D[], subtype: EnemySubtype, waveMultiplier: number) {
     this.path = path;
@@ -319,10 +324,17 @@ export class Enemy implements Vector2D {
     if (this.subtype.logic_tag === 'path_jump') {
       this.pathJumpDistance = 5; // Jump 5 cells ahead
       this.pathJumpTimer = 0;
+      this.pathJumpInitialDelay = 4.0; // 4 second delay before first jump
+      this.cellsTraveled = 0;
     }
 
     if (this.subtype.logic_tag === 'split_on_damage') {
       this.splitHealthPercent = 0.5; // Split at 50% HP
+    }
+
+    if (this.subtype.logic_tag.startsWith('split_on_hit_')) {
+      const parts = this.subtype.logic_tag.split('_');
+      this.splitOnHitChance = parseInt(parts[3]) / 100; // e.g., split_on_hit_80 -> 0.8
     }
 
     if (this.subtype.logic_tag === 'tower_hijack') {
@@ -351,6 +363,7 @@ export class Enemy implements Vector2D {
     this.isStunned = false; // Reset stun state
     this.hasCorrosion = false; // Reset corrosion visual state
     this.corrosionOffsets = []; // Reset amorphous blob shape
+    this.splitStunImmunity -= dt; // Tick down split stun immunity
     let maxSlow = 0;
     let totalArmorShred = 0;
 
@@ -666,6 +679,14 @@ export class Enemy implements Vector2D {
       this.isStealth = true;
       this.stealthTimer = 2.0; // Smoke lasts 2 seconds
       this.smokeCooldown = 5.0; // Cooldown before it can trigger again
+    }
+
+    // Split on Hit Logic - 80% chance to spawn a clone and stun original for 0.5s
+    if (this.splitOnHitChance > 0 && this.health > 0 && amount > 0 && this.splitStunImmunity <= 0) {
+      if (Math.random() < this.splitOnHitChance) {
+        // Return health data for clone creation
+        return { damaged: true, splitSpawn: [{ health: this.health, maxHealth: this.maxHealth, pathIndex: this.pathIndex } as any] };
+      }
     }
 
     return { damaged: true, splitSpawn: [] };
