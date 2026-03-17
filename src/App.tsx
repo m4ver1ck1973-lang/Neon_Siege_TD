@@ -102,18 +102,135 @@ export default function App() {
   const [sfxMuted, setSfxMuted] = useState(false);
   const [musicVolume, setMusicVolume] = useState(30); // 0-100 scale
   const [sfxVolume, setSfxVolume] = useState(50); // 0-100 scale
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState({ loaded: 0, total: 0, percent: 0 });
+  const [assetsLoaded, setAssetsLoaded] = useState(false);
+  
+  // Ref to track cleanup
+  const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const audioEnabledRef = useRef(false);
+
+  // Finish loading helper
+  const finishLoading = React.useCallback(() => {
+    if (loadTimeoutRef.current) {
+      clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = null;
+    }
+    setAudioEnabled(true);
+    setAssetsLoaded(true);
+    setIsLoading(false);
+  }, []);
+
+  // Direct click handler for splash screen - triggers loading immediately
+  const handleSplashClick = React.useCallback(async () => {
+    if (audioEnabledRef.current || !isLoading) return;
+    
+    console.log('[Splash] Direct click handler triggered');
+    
+    audioEnabledRef.current = true;
+    
+    // Set up progress listener
+    const handleProgress = (loaded: number, total: number) => {
+      const progress = audioManager.getLoadingProgress();
+      setLoadingProgress({ ...progress });
+      console.log(`[Splash] Progress: ${loaded}/${total} (${(progress.percent * 100).toFixed(1)}%)`);
+    };
+    audioManager.onProgress(handleProgress);
+    
+    // Set timeout fallback
+    loadTimeoutRef.current = setTimeout(() => {
+      console.warn('[App] Loading timeout - continuing without all assets');
+      finishLoading();
+    }, 60000);
+    
+    try {
+      console.log('[Audio] Starting audio initialization from splash click...');
+      await audioManager.enableAudio();
+      console.log('[Audio] Audio context enabled');
+      
+      const maxWait = 59000;
+      const startTime = Date.now();
+      let lastLogTime = Date.now();
+      
+      while (!audioManager.isReady()) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        if (Date.now() - lastLogTime > 2000) {
+          const progress = audioManager.getLoadingProgress();
+          console.log(`[Splash] Still loading... ${progress.loaded}/${progress.total} (${(progress.percent * 100).toFixed(1)}%)`);
+          lastLogTime = Date.now();
+        }
+        
+        if (Date.now() - startTime > maxWait) {
+          console.warn('[App] Audio not ready after 59s, continuing anyway');
+          break;
+        }
+      }
+      
+      console.log('[Audio] Audio ready! Loading complete.');
+      finishLoading();
+    } catch (error) {
+      console.warn('[App] Audio initialization failed:', error);
+      finishLoading();
+    }
+  }, [isLoading, finishLoading]);
 
   // Enable audio on first user interaction
   useEffect(() => {
-    let audioEnabled = false;
-    
+    // Set up progress listener with forced re-render
+    const handleProgress = (loaded: number, total: number) => {
+      const progress = audioManager.getLoadingProgress();
+      // Force state update with new object reference
+      setLoadingProgress({ ...progress });
+      console.log(`[Splash] Progress: ${loaded}/${total} (${(progress.percent * 100).toFixed(1)}%)`);
+    };
+
+    audioManager.onProgress(handleProgress);
+
     const enableAudioOnInteraction = async () => {
-      if (audioEnabled) return;
-      audioEnabled = true;
-      
-      await audioManager.enableAudio();
-      setAudioEnabled(true);
-      
+      if (audioEnabledRef.current) return;
+      audioEnabledRef.current = true;
+
+      console.log('[Audio] Starting audio initialization...');
+
+      // Set a maximum load time of 60 seconds (BGM files can be large)
+      loadTimeoutRef.current = setTimeout(() => {
+        console.warn('[App] Loading timeout - continuing without all assets');
+        finishLoading();
+      }, 60000);
+
+      try {
+        await audioManager.enableAudio();
+        console.log('[Audio] Audio context enabled');
+
+        // Wait for audio to be ready (with timeout protection)
+        const maxWait = 59000; // Slightly less than timeout
+        const startTime = Date.now();
+        let lastLogTime = Date.now();
+
+        while (!audioManager.isReady()) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+
+          // Log status every 2 seconds so user knows something is happening
+          if (Date.now() - lastLogTime > 2000) {
+            const progress = audioManager.getLoadingProgress();
+            console.log(`[Splash] Still loading... ${progress.loaded}/${progress.total} (${(progress.percent * 100).toFixed(1)}%)`);
+            lastLogTime = Date.now();
+          }
+
+          if (Date.now() - startTime > maxWait) {
+            console.warn('[App] Audio not ready after 59s, continuing anyway');
+            break;
+          }
+        }
+
+        console.log('[Audio] Audio ready! Loading complete.');
+        finishLoading();
+      } catch (error) {
+        console.warn('[App] Audio initialization failed:', error);
+        finishLoading();
+      }
+
       // Remove all listeners
       document.removeEventListener('click', enableAudioOnInteraction);
       document.removeEventListener('keydown', enableAudioOnInteraction);
@@ -126,11 +243,14 @@ export default function App() {
     document.addEventListener('touchstart', enableAudioOnInteraction, { once: true });
 
     return () => {
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+      }
       document.removeEventListener('click', enableAudioOnInteraction);
       document.removeEventListener('keydown', enableAudioOnInteraction);
       document.removeEventListener('touchstart', enableAudioOnInteraction);
     };
-  }, []);
+  }, [finishLoading]);
 
   // Handle music mute toggle
   const toggleMusic = () => {
@@ -187,12 +307,13 @@ export default function App() {
 
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!engineRef.current || !selectedSkillId) return;
-    
-    const rect = canvasRef.current!.getBoundingClientRect();
+
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const offsetX = (canvasRef.current!.width - (engineRef.current.gridWidth * engineRef.current.cellSize)) / 2;
-    const offsetY = (canvasRef.current!.height - (engineRef.current.gridHeight * engineRef.current.cellSize)) / 2;
+    const offsetX = (canvas.width - (engineRef.current.gridWidth * engineRef.current.cellSize)) / 2;
+    const offsetY = (canvas.height - (engineRef.current.gridHeight * engineRef.current.cellSize)) / 2;
     const gridX = Math.floor((x - offsetX) / engineRef.current.cellSize);
     const gridY = Math.floor((y - offsetY) / engineRef.current.cellSize);
 
@@ -215,7 +336,7 @@ export default function App() {
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!engineRef.current) return;
     const engine = engineRef.current;
-    
+
     // If radial menu is open, close it
     if (radialMenu) {
       setRadialMenu(null);
@@ -224,16 +345,17 @@ export default function App() {
       return;
     }
 
-    const rect = canvasRef.current!.getBoundingClientRect();
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    
-    const offsetX = (canvasRef.current!.width - (engine.gridWidth * engine.cellSize)) / 2;
-    const offsetY = (canvasRef.current!.height - (engine.gridHeight * engine.cellSize)) / 2;
-    
+
+    const offsetX = (canvas.width - (engine.gridWidth * engine.cellSize)) / 2;
+    const offsetY = (canvas.height - (engine.gridHeight * engine.cellSize)) / 2;
+
     const gridX = Math.floor((x - offsetX) / engine.cellSize);
     const gridY = Math.floor((y - offsetY) / engine.cellSize);
-    
+
     if (gridX >= 0 && gridX < engine.gridWidth && gridY >= 0 && gridY < engine.gridHeight) {
       // Handle Skill Placement
       if (selectedSkillId) {
@@ -245,17 +367,18 @@ export default function App() {
       }
 
       const clickedTower = engine.towers.find(t => Math.floor(t.x) === gridX && Math.floor(t.y) === gridY);
-      
+
       if (clickedTower) {
-        // Toggle selection
+        // Toggle selection - clicking a different tower closes the current panel and opens the new one
         const newSelection = engine.selectedPlacedTower === clickedTower ? null : clickedTower;
         engine.selectedPlacedTower = newSelection;
         setSelectedPlacedTower(newSelection);
       } else {
+        // Clicking on empty space - close tower panel and show radial menu
         engine.selectedPlacedTower = null;
         setSelectedPlacedTower(null);
         const isPath = engine.isPath(gridX, gridY);
-        
+
         if (!isPath) {
           // Clamp radial menu position to keep it fully on screen
           const MENU_RADIUS = 120; // 75px radius + button size + padding
@@ -282,6 +405,108 @@ export default function App() {
   if (currentLevelIndex === null) {
     return (
       <>
+        {/* Splash Screen - Blocks interaction until assets are loaded */}
+        {isLoading && (
+          <div
+            className="fixed inset-0 bg-black z-50 flex flex-col items-center justify-center cursor-wait no-select"
+            onClick={handleSplashClick}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            {/* Animated background grid */}
+            <div className="absolute inset-0 opacity-10">
+              <div 
+                className="w-full h-full"
+                style={{
+                  backgroundImage: 'linear-gradient(#06b6d4 1px, transparent 1px), linear-gradient(90deg, #06b6d4 1px, transparent 1px)',
+                  backgroundSize: '40px 40px',
+                  animation: 'gridMove 20s linear infinite'
+                }}
+              />
+            </div>
+            
+            {/* Main content */}
+            <div className="relative z-10 text-center px-8">
+              {/* Title */}
+              <h1 className="text-6xl font-black uppercase tracking-widest text-cyan-400 mb-2 flex items-center justify-center gap-4">
+                <span className="w-3 h-3 bg-cyan-400 rounded-full animate-pulse"></span>
+                NEON_SIEGE_OS
+                <span className="w-3 h-3 bg-cyan-400 rounded-full animate-pulse"></span>
+              </h1>
+              <p className="text-cyan-700 uppercase tracking-widest text-sm mb-12">Initializing Defense Grid...</p>
+              
+              {/* Loading indicator */}
+              <div className="w-80 mb-4">
+                {/* Progress bar container */}
+                <div className="h-1 bg-zinc-900 border border-cyan-900/50 rounded-full overflow-hidden relative">
+                  {/* Animated scan line */}
+                  <div 
+                    className="absolute top-0 h-full w-20 bg-gradient-to-r from-transparent via-cyan-500/30 to-transparent"
+                    style={{
+                      animation: 'scan 1.5s ease-in-out infinite'
+                    }}
+                  />
+                  {/* Progress fill */}
+                  <div 
+                    className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400 transition-all duration-300 rounded-full"
+                    style={{ 
+                      width: `${loadingProgress.percent * 100}%`,
+                      boxShadow: '0 0 20px rgba(6, 182, 212, 0.5)'
+                    }}
+                  />
+                </div>
+                
+                {/* Loading text */}
+                <div className="flex justify-between items-center mt-3 text-xs font-mono">
+                  <span className="text-cyan-700 uppercase tracking-wider">Loading Assets</span>
+                  <span className="text-cyan-400">
+                    {loadingProgress.loaded} / {loadingProgress.total > 0 ? loadingProgress.total : '...'}
+                  </span>
+                </div>
+                
+                {/* Status messages */}
+                <div className="mt-6 space-y-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <div className={`w-2 h-2 rounded-full ${loadingProgress.loaded >= 2 ? 'bg-emerald-400' : 'bg-cyan-900 animate-pulse'}`}></div>
+                    <span className={loadingProgress.loaded >= 2 ? 'text-emerald-400' : 'text-cyan-800'}>BGM Tracks</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <div className={`w-2 h-2 rounded-full ${loadingProgress.loaded >= 27 ? 'bg-emerald-400' : loadingProgress.loaded >= 2 ? 'bg-cyan-500 animate-pulse' : 'bg-cyan-900'}`}></div>
+                    <span className={loadingProgress.loaded >= 27 ? 'text-emerald-400' : 'text-cyan-800'}>Sound Effects</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <div className={`w-2 h-2 rounded-full ${assetsLoaded ? 'bg-emerald-400' : 'bg-cyan-900'}`}></div>
+                    <span className={assetsLoaded ? 'text-emerald-400' : 'text-cyan-800'}>System Ready</span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Click to start hint */}
+              <div className="mt-12 text-cyan-800 text-xs uppercase tracking-widest animate-pulse">
+                Click anywhere to initialize
+              </div>
+
+              {/* Skip button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  finishLoading();
+                }}
+                className="mt-6 px-6 py-2 bg-cyan-950/50 border border-cyan-700 text-cyan-400 font-bold uppercase tracking-widest text-xs hover:bg-cyan-900 hover:border-cyan-400 transition-all"
+              >
+                Skip Loading
+              </button>
+            </div>
+            
+            {/* Scanline overlay */}
+            <div 
+              className="absolute inset-0 pointer-events-none opacity-20"
+              style={{
+                backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(6, 182, 212, 0.1) 2px, rgba(6, 182, 212, 0.1) 4px)'
+              }}
+            />
+          </div>
+        )}
+
         <div className="flex flex-col w-full h-screen bg-[#050505] font-mono text-cyan-500 select-none items-center p-8 overflow-y-auto">
         <div className="max-w-6xl w-full">
           <div className="text-center mb-12 shrink-0">
@@ -469,7 +694,7 @@ export default function App() {
       </div>
 
       {/* Game Canvas Container */}
-      <div className="flex-1 relative w-full">
+      <div className="flex-1 relative w-full pt-10">
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full block cursor-crosshair"
@@ -567,11 +792,15 @@ export default function App() {
         )}
         {/* Selected Tower Panel */}
         {selectedPlacedTower && (
-          <div className="absolute bottom-6 left-6 bg-zinc-950/90 border border-cyan-900/50 p-4 w-64 shadow-[0_0_20px_rgba(0,255,255,0.1)] z-30">
+          <div 
+            className="absolute bottom-6 left-6 bg-zinc-950/90 border border-cyan-900/50 p-4 w-64 shadow-[0_0_20px_rgba(0,255,255,0.1)] z-30"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-start mb-2">
               <h3 className="font-bold uppercase tracking-wider text-sm" style={{ color: selectedPlacedTower.level.color }}>{selectedPlacedTower.level.name}</h3>
-              <button 
-                onClick={() => {
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
                   if (engineRef.current) engineRef.current.selectedPlacedTower = null;
                   setSelectedPlacedTower(null);
                 }}
@@ -580,7 +809,7 @@ export default function App() {
                 <X size={16} />
               </button>
             </div>
-            
+
             <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs font-mono text-cyan-700 mb-4">
               <div>DMG: <span className="text-white">{selectedPlacedTower.level.damage}</span></div>
               <div>RNG: <span className="text-white">{selectedPlacedTower.level.range}</span></div>
@@ -606,10 +835,14 @@ export default function App() {
                 const canAfford = gameState.credits >= nextLevel.cost;
                 return (
                   <button
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
                       if (canAfford && engineRef.current) {
                         engineRef.current.upgradeTower(selectedPlacedTower);
                         audioManager.play('ui_shot2');
+                        // Close panel after upgrade
+                        engineRef.current.selectedPlacedTower = null;
+                        setSelectedPlacedTower(null);
                       }
                     }}
                     className={`flex items-center justify-between px-3 py-2 text-xs font-bold uppercase tracking-wider border transition-colors ${
@@ -625,10 +858,13 @@ export default function App() {
               })()}
 
               <button
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   if (engineRef.current) {
                     engineRef.current.sellTower(selectedPlacedTower);
                     audioManager.play('ui_shot');
+                    // Close panel after sell
+                    engineRef.current.selectedPlacedTower = null;
                     setSelectedPlacedTower(null);
                   }
                 }}
@@ -636,7 +872,7 @@ export default function App() {
               >
                 <span className="flex items-center gap-1"><Trash2 size={14}/> Sell</span>
                 <span className="flex items-center gap-1 text-amber-400">
-                  <Coins size={12}/> 
+                  <Coins size={12}/>
                   {(() => {
                     let total = 0;
                     const cat = TOWERS[selectedPlacedTower.categoryIndex];

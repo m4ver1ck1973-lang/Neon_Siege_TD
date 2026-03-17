@@ -39,15 +39,45 @@ export class AudioManager {
 
   private isMuted = false;
   private isInitialized = false;
+  private isLoading = false;
+  private loadProgress = 0;
+  private totalSoundsToLoad = 0;
+  private onProgressCallback?: (loaded: number, total: number) => void;
 
   constructor() {
     // AudioContext will be initialized on user interaction
+  }
+
+  /**
+   * Set callback for loading progress updates
+   */
+  onProgress(callback: (loaded: number, total: number) => void) {
+    this.onProgressCallback = callback;
+  }
+
+  /**
+   * Check if audio manager is fully loaded and ready
+   */
+  isReady(): boolean {
+    return this.isInitialized && !this.isLoading;
+  }
+
+  /**
+   * Get loading progress (0-1)
+   */
+  getLoadingProgress(): { loaded: number; total: number; percent: number } {
+    return {
+      loaded: this.loadProgress,
+      total: this.totalSoundsToLoad,
+      percent: this.totalSoundsToLoad > 0 ? this.loadProgress / this.totalSoundsToLoad : 0
+    };
   }
 
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
 
     try {
+      this.isLoading = true;
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
 
       // Create brownout low-pass filter (master filter for all audio)
@@ -65,63 +95,100 @@ export class AudioManager {
         this.gainNodes.set(category, gainNode);
       }
 
-      // Load all sounds
+      // Load all sounds with progress tracking
       await this.loadSounds();
 
       this.isInitialized = true;
+      this.isLoading = false;
       console.log('[AudioManager] Initialized');
       console.log(`[AudioManager] Loaded ${this.buffers.size} sounds`);
     } catch (error) {
+      this.isLoading = false;
       console.warn('[AudioManager] Failed to initialize:', error);
     }
   }
 
   private async loadSounds(): Promise<void> {
-    // Load BGM FIRST so music can start immediately
+    console.log('[AudioManager] Starting loadSounds...');
+    
+    // Count total sounds to load (BGM + SFX, voice loads in background)
     const bgmFiles = ['Cpunk_log.ogg', 'neonsiege-2.ogg'];
-    for (let i = 0; i < bgmFiles.length; i++) {
-      try {
-        const buffer = await this.loadSoundFile(`/sounds/bgm/${bgmFiles[i]}`);
-        this.buffers.set(`music_bgm_${i + 1}`, buffer);
-        // Also store as music_bg for backwards compatibility
-        if (i === 0) {
-          this.buffers.set('music_bg', buffer);
-        }
-      } catch (error) {
-        console.warn(`[AudioManager] Failed to load bgm/${bgmFiles[i]}:`, error);
-      }
-    }
-    console.log('[AudioManager] BGM loaded, music ready');
-
-    // Load SFX in parallel for faster loading
     const sfxFiles = [
       'blip.wav', 'bloop.wav', 'bzap.wav', 'canon.wav', 'data_gain.wav', 'data_lost.wav',
       'debuff.wav', 'emp.wav', 'falling.wav', 'impact_small.wav', 'klaxon.wav', 'klaxon2.wav',
       'laser.wav', 'lomg-zap.wav', 'processing.wav', 'rocket.wav', 'shot.wav', 'shot2.wav',
       'skip-zap.wav', 'sweeps.wav', 'wind_down.wav', 'zap.wav', 'zap2.wav', 'zap_small.wav', 'zoink.wav'
     ];
+    
+    this.totalSoundsToLoad = bgmFiles.length + sfxFiles.length;
+    this.loadProgress = 0;
+    
+    console.log(`[AudioManager] Total sounds to load: ${this.totalSoundsToLoad}`);
 
-    // Load SFX in parallel batches of 5 to avoid overwhelming the browser
-    const batchSize = 5;
+    // Load BGM FIRST so music can start immediately
+    // BGM files are larger OGG files, so use longer timeout (30s)
+    console.log('[AudioManager] Loading BGM files...');
+    for (let i = 0; i < bgmFiles.length; i++) {
+      console.log(`[AudioManager] Loading BGM ${i + 1}/${bgmFiles.length}: ${bgmFiles[i]}`);
+      try {
+        const buffer = await this.loadSoundFile(`/sounds/bgm/${bgmFiles[i]}`, 30000);
+        this.buffers.set(`music_bgm_${i + 1}`, buffer);
+        // Also store as music_bg for backwards compatibility
+        if (i === 0) {
+          this.buffers.set('music_bg', buffer);
+        }
+        this.loadProgress++;
+        console.log(`[AudioManager] BGM progress: ${this.loadProgress}/${this.totalSoundsToLoad}`);
+        if (this.onProgressCallback) {
+          console.log('[AudioManager] Calling progress callback...');
+          this.onProgressCallback(this.loadProgress, this.totalSoundsToLoad);
+        }
+        // Yield to main thread to allow UI update
+        await new Promise(resolve => setTimeout(resolve, 50));
+      } catch (error) {
+        this.loadProgress++;
+        console.warn(`[AudioManager] Failed to load bgm/${bgmFiles[i]}:`, error);
+      }
+    }
+    console.log('[AudioManager] BGM loaded, music ready');
+
+    // Load SFX in parallel for faster loading, but with yielding
+    console.log('[AudioManager] Loading SFX files...');
+    const batchSize = 3; // Smaller batches for more frequent progress updates
     for (let i = 0; i < sfxFiles.length; i += batchSize) {
       const batch = sfxFiles.slice(i, i + batchSize);
-      await Promise.all(batch.map(async (file) => {
+      console.log(`[AudioManager] Loading SFX batch ${Math.floor(i / batchSize) + 1}: ${batch.join(', ')}`);
+      
+      const results = await Promise.allSettled(batch.map(async (file) => {
         try {
           const baseName = file.replace('.wav', '').replace('.ogg', '').replace(/\./g, '_');
-          const buffer = await this.loadSoundFile(`/sounds/sfx/${file}`);
+          const buffer = await this.loadSoundFile(`/sounds/sfx/${file}`, 10000);
           this.buffers.set(`sfx_${baseName}`, buffer);
           this.buffers.set(baseName, buffer);
+          return true;
         } catch (error) {
           console.warn(`[AudioManager] Failed to load sfx/${file}:`, error);
+          return false;
         }
       }));
+      
+      // Update progress after each batch
+      this.loadProgress += results.length;
+      console.log(`[AudioManager] SFX progress: ${this.loadProgress}/${this.totalSoundsToLoad}`);
+      if (this.onProgressCallback) {
+        console.log('[AudioManager] Calling progress callback...');
+        this.onProgressCallback(this.loadProgress, this.totalSoundsToLoad);
+      }
+      // Yield to main thread to allow UI update
+      await new Promise(resolve => setTimeout(resolve, 20));
     }
     console.log('[AudioManager] SFX loaded');
 
     // Create aliases for old sound names (after SFX are loaded)
     this.setupAliases();
 
-    // Load voice files in background (lowest priority)
+    // Load voice files in background (lowest priority - don't block)
+    console.log('[AudioManager] Voice files loading in background...');
     const voiceFiles = [
       'circuit_saturated.wav', 'core_exposed.wav', 'data_breach_imminent.wav',
       'firewall_crumbling.wav', 'grid_capacity_exceeded.wav', 'no_more_nodes.wav',
@@ -134,7 +201,7 @@ export class AudioManager {
     voiceFiles.forEach(async (file) => {
       try {
         const baseName = file.replace('.wav', '').replace('.ogg', '').replace(/\./g, '_');
-        const buffer = await this.loadSoundFile(`/sounds/voice/${file}`);
+        const buffer = await this.loadSoundFile(`/sounds/voice/${file}`, 10000);
         this.buffers.set(`voice_${baseName}`, buffer);
       } catch (error) {
         console.warn(`[AudioManager] Failed to load voice/${file}:`, error);
@@ -178,10 +245,34 @@ export class AudioManager {
     this.buffers.set('ambient_wind', this.buffers.get('wind_down'));
   }
 
-  private async loadSoundFile(url: string): Promise<AudioBuffer> {
-    const response = await fetch(url);
-    const arrayBuffer = await response.arrayBuffer();
-    return await this.audioContext!.decodeAudioData(arrayBuffer);
+  private async loadSoundFile(url: string, timeoutMs: number = 10000): Promise<AudioBuffer> {
+    // Add timeout to prevent hanging on missing files
+    // Default 10s, but BGM files can take longer to decode
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    
+    try {
+      console.log(`[AudioManager] Loading: ${url}`);
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const arrayBuffer = await response.arrayBuffer();
+      console.log(`[AudioManager] Decoding: ${url} (${arrayBuffer.byteLength} bytes)`);
+      const startTime = Date.now();
+      
+      const audioBuffer = await this.audioContext!.decodeAudioData(arrayBuffer);
+      
+      console.log(`[AudioManager] Decoded ${url} in ${Date.now() - startTime}ms (${audioBuffer.duration.toFixed(2)}s)`);
+      return audioBuffer;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      console.error(`[AudioManager] Failed to load ${url}:`, error);
+      throw error;
+    }
   }
 
   play(soundName: string, options?: PlaySoundOptions): void {

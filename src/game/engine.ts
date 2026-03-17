@@ -63,6 +63,7 @@ export class GameEngine {
   enemiesToSpawn: number = 0;
   spawnTimer: number = 0;
   gameSpeed: number = 1.0;
+  cooldownNotifyTimer: number = 0; // For throttling cooldown state updates
 
   setGameSpeed(speed: number) {
     this.gameSpeed = speed;
@@ -465,13 +466,25 @@ export class GameEngine {
     if (this.state.status === 'playing') {
       // Spawning
       // Update Skill Cooldowns
+      let cooldownsChanged = false;
       for (const id in this.state.skillCooldowns) {
         if (this.state.skillCooldowns[id] > 0) {
+          const oldCooldown = this.state.skillCooldowns[id];
           this.state.skillCooldowns[id] = Math.max(0, this.state.skillCooldowns[id] - dt);
+          if (oldCooldown !== this.state.skillCooldowns[id]) {
+            cooldownsChanged = true;
+          }
         }
       }
-      // Note: We notify state in loop only if needed, but usually UI polls or we trigger on change.
-      // For smooth CD timers, UI might need frequent updates or handle interpolation.
+      
+      // Notify state for cooldown updates at throttled rate (10x per second)
+      if (cooldownsChanged) {
+        this.cooldownNotifyTimer -= dt;
+        if (this.cooldownNotifyTimer <= 0) {
+          this.notifyState();
+          this.cooldownNotifyTimer = 0.1; // 100ms = 10 updates per second
+        }
+      }
 
       if (this.enemiesToSpawn > 0) {
         this.spawnTimer -= dt;
