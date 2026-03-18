@@ -1,0 +1,6 @@
+Action,Standard Line,Cyberpunk Variation
+Grid Full,Grid capacity exceeded!,Circuit saturated. No more nodes.
+Losing,Data breach imminent!,Firewall crumbling. Core exposed!
+Win Wave,Wave complete!,Vector cleared. Stabilizing link...
+Build,Tower online!,Sentry synced. Protocol active.
+Ultimate,System overload activated!,Safety limiters: OFF. Overclocking.
